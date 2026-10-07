@@ -7,7 +7,6 @@ import { NotePreview } from "@/components/NotePreview";
 import { EditNoteDialog } from "@/components/EditNoteDialog";
 import { NoteFilters } from "@/components/NoteFilters";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { loadCustomTemplates, noteTemplates } from "@/data/noteTemplates";

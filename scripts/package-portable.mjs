@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
+ 
 /**
  * Portable zip packaging script (Stage 1 — Enhancements #13 / #15 / #16).
  *
@@ -60,7 +60,8 @@ if (!["win", "linux"].includes(platform)) {
 }
 
 const arch = process.arch === "arm64" ? "arm64" : "x64";
-const distTag = `${nodeVersion}-node-${platform}-${arch}`;
+// Official nodejs.org layout: node-<version>-<platform>-<arch>.<ext>
+const distTag = `node-${nodeVersion}-${platform}-${arch}`;
 const ext = platform === "win" ? "zip" : "tar.xz";
 const archiveUrl = `https://nodejs.org/dist/${nodeVersion}/${distTag}.${ext}`;
 

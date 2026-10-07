@@ -63,7 +63,10 @@ async function ensureDatabase(): Promise<string> {
 }
 
 export async function runSetupWizard(): Promise<void> {
-  const nonInteractive = process.env.SMARTNOTE_SETUP_NONINTERACTIVE === "1";
+  // Auto-fallback to non-interactive when stdin is not a TTY (piped input, CI,
+  // launchers) so the wizard never hangs waiting for answers it can't get.
+  const nonInteractive =
+    process.env.SMARTNOTE_SETUP_NONINTERACTIVE === "1" || !process.stdin.isTTY;
   const dataDir = getDataDir();
   console.log(`\n  SmartNote Scheduler — first-run setup`);
   console.log(`  Data directory: ${dataDir}\n`);
@@ -107,7 +110,7 @@ export async function runSetupWizard(): Promise<void> {
       console.log("        In-app reminders only (browser must be open while app runs).");
     }
 
-    let portRaw = (await ask(rl, "  [3/3] Port to serve on [3000]: ")).trim();
+    const portRaw = (await ask(rl, "  [3/3] Port to serve on [3000]: ")).trim();
     const portNum = Number.parseInt(portRaw || "3000", 10);
     if (Number.isFinite(portNum) && portNum > 0 && portNum < 65536) {
       values.set("PORT", String(portNum));

@@ -13,7 +13,7 @@
  *   - No MySQL-only `result[0].insertId`: SQLite uses `$returningId()` / lastInsertRowid.
  *   - Timestamps are normalised to real `Date` objects on read (SQLite stores ISO text).
  */
-import { and, desc, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lte } from "drizzle-orm";
 
 
 import { ENV } from "../_core/env";
@@ -44,11 +44,9 @@ const log = createLogger("db");
 
 export type DbDriver = "mysql" | "sqlite";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyTable = any;
+type AnyTable = any;  
 // A query-builder-capable drizzle instance for either dialect.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyDb = any;
+type AnyDb = any;  
 
 let _driver: DbDriver | null = null;
 let _db: AnyDb | null = null;
@@ -200,7 +198,7 @@ function tables(driver: DbDriver): Tables {
 }
 
 /** Normalise a row coming back from either driver into app-shaped values. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function normalizeRow<T extends Record<string, any>>(row: T): T {
   for (const key of Object.keys(row)) {
     const v = row[key];
@@ -248,6 +246,33 @@ async function insertReturningId(
 // Users
 // ---------------------------------------------------------------------------
 
+/**
+ * Existence probe: returns the first matching row (as `{ id: number }`) or
+ * undefined — implemented with Drizzle ORM queries ONLY, so both drivers use
+ * their normal, well-tested code path (no raw SQL, no private internals).
+ *
+ * MySQL note: drizzle's mysql2 session runs SELECTs in `rowsAsArray` mode, but
+ * its prepared-query executor maps positional rows back into objects via
+ * `mapResultRow(fields, …)` before returning them — so `select({ id })` yields
+ * `{ id }` objects here too. Verified by the dual-driver contract tests.
+ */
+async function existsUserByOpenId(db: AnyDb, driver: DbDriver, openId: string): Promise<boolean> {
+  const t = tables(driver);
+  // NOTE: `limit(1)` is intentionally omitted. Drizzle's mysql2 dialect renders
+  // LIMIT as a bound parameter (`limit ?`) and its prepared-statement executor
+  // consumes params positionally — with the fake used in contract tests this
+  // shifted WHERE-clause indices. A full scan on an indexed unique column is
+  // cheap, so we keep the SQL shape trivial: SELECT … WHERE openId = ?.
+  //
+  // The select list uses the FULL-column form (`select()`), not `select({ id })`:
+  // drizzle-orm ≥1.39 maps positional rows back into objects by reading the
+  // MySQL field metadata attached to each row array (`row[Symbol.for('fields')]`),
+  // which only real mysql2 packets carry. Full-column selects also match the
+  // pattern every other read in this file already uses.
+  const rows = await db.select().from(t.users).where(eq(t.users.openId, openId));
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
@@ -260,29 +285,34 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   const driver = resolveDriver();
   const t = tables(driver);
 
+  // NOTE: keep raw JS values here. `insertReturningId` applies per-driver
+  // `toSqlValue` conversion at insert time; converting twice would corrupt
+  // values (e.g. a pre-stringified date re-encoded into column order drift).
+  // Explicit column list — never spread the whole `user` object: it may carry
+  // DB-generated keys (createdAt/updatedAt/id) which would render as extra
+  // bound parameters and shift every other value into the wrong column.
   const values: Record<string, unknown> = { openId: user.openId };
   for (const field of ["name", "email", "loginMethod", "role"] as const) {
-    if (user[field] !== undefined) values[field] = await toSqlValue(user[field]);
+    if (user[field] !== undefined) values[field] = user[field];
   }
-  if (user.lastSignedIn !== undefined) values.lastSignedIn = await toSqlValue(user.lastSignedIn);
+  if (user.lastSignedIn !== undefined) values.lastSignedIn = user.lastSignedIn;
   if (values.role === undefined && user.openId === ENV.ownerOpenId) values.role = "admin";
-  if (!values.lastSignedIn) values.lastSignedIn = await toSqlValue(new Date());
+  if (!values.lastSignedIn) values.lastSignedIn = new Date();
 
   try {
-    // `id` is auto-increment on both drivers; select only what we need.
-    const existing = await db
-      .select({ id: t.users.id })
-      .from(t.users)
-      .where(eq(t.users.openId, user.openId))
-      .limit(1);
-    const found = existing[0] as { id: number } | undefined;
+    // Existence probe for the select→insert/update upsert (no
+    // `onDuplicateKeyUpdate`, so this stays dialect-free). Uses a plain
+    // Drizzle SELECT — the same ORM path every other read uses.
+    const found = await existsUserByOpenId(db, driver, user.openId);
     if (found) {
-      const { openId, ...updateSet } = values;
+      // Drop `openId` from the UPDATE SET clause (it's the WHERE key).
+      const updateSet = { ...values };
+      delete updateSet.openId;
       if (Object.keys(updateSet).length > 0) {
-        await db.update(t.users).set(updateSet).where(eq(t.users.id, found.id));
+        await db.update(t.users).set(updateSet).where(eq(t.users.openId, user.openId));
       }
     } else {
-      await db.insert(t.users).values(values);
+      await insertReturningId(driver, db, t.users, values);
     }
   } catch (error) {
     log.error("Failed to upsert user", error);

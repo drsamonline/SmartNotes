@@ -10,11 +10,9 @@ import {
   getUserNotes,
   updateNote,
   createReminder,
-  getRemindersForNote,
   deleteRemindersForNote,
 } from "./db/index";
 import { analyzeNoteContent, combineDateAndTime } from "./ai";
-import { notifyOwner } from "./_core/notification";
 
 export const notesRouter = router({
   /**

@@ -1,12 +1,13 @@
 import "dotenv/config";
 import express from "express";
+import { spawn } from "node:child_process";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
+import { serveStatic } from "./vite";
 import { processPendingReminders } from "../notifications";
 import { sdk } from "./sdk";
 import { getDb, resolveDriver } from "../db";
@@ -57,7 +58,6 @@ function openInBrowser(url: string): void {
         : { file: "xdg-open", args: [url] };
   try {
     // Detached helper process; failures are non-fatal (we always print the URL).
-    const { spawn } = require("node:child_process") as typeof import("node:child_process");
     const child = spawn(cmd.file, cmd.args, { stdio: "ignore", detached: true });
     child.on("error", () => {});
     child.unref();
@@ -150,6 +150,9 @@ async function startServer() {
   );
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
+    // Dev-only: lazy-load the Vite middleware so production bundles don't need
+    // (or load) the `vite` package at all.
+    const { setupVite } = await import("./vite");
     await setupVite(app, server);
   } else {
     serveStatic(app);
