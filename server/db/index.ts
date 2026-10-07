@@ -269,17 +269,36 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!values.lastSignedIn) values.lastSignedIn = await toSqlValue(new Date());
 
   try {
-    // `id` is auto-increment on both drivers; select only what we need.
-    const existing = await db
-      .select({ id: t.users.id })
-      .from(t.users)
-      .where(eq(t.users.openId, user.openId))
-      .limit(1);
-    const found = existing[0] as { id: number } | undefined;
-    if (found) {
+    // Existence probe for the select→insert/update upsert (no
+    // `onDuplicateKeyUpdate`, so this stays dialect-free). We deliberately do
+    // NOT use a Drizzle select with an explicit field list here: drizzle's
+    // mysql2 session switches to `rowsAsArray` mode whenever fields are
+    // present, returning positional arrays that bypass column mapping. The
+    // raw path returns plain shapes on both drivers:
+    //   - mysql2   → [rows[], header[]] where rows are objects when no field
+    //                list is attached (the fake/real driver case) or arrays
+    //                otherwise; we normalise both.
+    //   - better-sqlite3 → ExecuteResultSync whose value is stmt.all() row
+    //                objects (unmapped, hence numeric-string ids possible).
+    const probeSql = `select \`id\` from \`${t.users.getTableName()}\` where \`openId\` = ? limit 1`;
+    const raw = await db.execute(probeSql, [user.openId]);
+    const rows: unknown[] = Array.isArray(raw)
+      ? (Array.isArray(raw[0]) || (raw[0] && typeof raw[0] === "object" && !("id" in (raw[0] as object)) && !(raw[0] as object))
+          ? (raw[0] as unknown[])
+          : (raw as unknown[]))
+      : Array.isArray(raw)
+        ? (raw as unknown[])
+        : [];
+    let foundId: number | undefined;
+    const firstRow = rows[0];
+    if (firstRow != null) {
+      const idVal = Array.isArray(firstRow) ? firstRow[0] : (firstRow as { id?: unknown }).id;
+      foundId = Number(idVal);
+    }
+    if (foundId != null && Number.isFinite(foundId)) {
       const { openId, ...updateSet } = values;
       if (Object.keys(updateSet).length > 0) {
-        await db.update(t.users).set(updateSet).where(eq(t.users.id, found.id));
+        await db.update(t.users).set(updateSet).where(eq(t.users.openId, user.openId));
       }
     } else {
       await db.insert(t.users).values(values);
