@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1776274582491,
+      "tag": "0000_needy_may_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1776275108048,
+      "tag": "0001_good_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1791092885952,
+      "tag": "0002_sticky_blue_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1791093241501,
+      "tag": "0003_normal_marvex",
+      "breakpoints": true
+    }
+  ]
+}
