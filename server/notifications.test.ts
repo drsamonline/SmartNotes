@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   notifyOwner: vi.fn(),
 }));
 
-vi.mock("./db", () => ({
+vi.mock("./db/index", () => ({
   getPendingReminders: mocks.getPendingReminders,
   markReminderAsSent: mocks.markReminderAsSent,
   getNoteById: mocks.getNoteById,

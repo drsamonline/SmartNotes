@@ -1,4 +1,14 @@
-# SmartNote Scheduler — Architecture
+<div align="center">
+
+# 🏛️ SmartNote Scheduler — Architecture
+
+*How the system fits together — verified against v1.0.0 source.*
+
+[API reference](./API.md) · [Database guide](./DATABASE.md) · [Portable apps RFC](./PORTABLE_APPS.md)
+
+</div>
+
+---
 
 A high-level tour of how the system fits together. For endpoint details see
 [API.md](./API.md); for tables and migrations see [DATABASE.md](./DATABASE.md).
@@ -126,3 +136,12 @@ push, email webhook, DB) are mocked at module boundaries so tests run hermetical
 | User-scoped composite indexes | Multi-tenant query performance without partitioning |
 | Provider-neutral email webhook | Swappable email vendor; app owns no SMTP credentials |
 | pnpm-patched wouter | Upstream bug workaround pinned reproducibly in `patches/` |
+---
+
+<div align="center">
+
+**Related:** [API](./API.md) · [Database](./DATABASE.md) · [Portable Apps RFC](./PORTABLE_APPS.md) · [Enhancements](./ENHANCEMENTS.md) · [Plan](./IMPLEMENTATION_PLAN.md)
+
+*© 2026 SmartNote Scheduler contributors · MIT License*
+
+</div>

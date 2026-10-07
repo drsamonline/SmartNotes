@@ -1,4 +1,12 @@
-# SmartNote Scheduler — Database Guide
+<div align="center">
+
+# 🗄️ SmartNote Scheduler — Database Guide
+
+*Drizzle ORM · MySQL dialect · forward-only migrations*
+
+[Schema source](../drizzle/schema.ts) · [Architecture](./ARCHITECTURE.md) · [API](./API.md)
+
+</div>
 
 Authoritative schema: [`drizzle/schema.ts`](../drizzle/schema.ts) (Drizzle ORM,
 MySQL dialect). Migrations live in [`drizzle/`](../drizzle) and are applied
@@ -120,3 +128,13 @@ declared in `drizzle/relations.ts`.
   prefix).
 - Enums are mirrored as TS unions in `server/ai.ts` / `shared/types.ts`; change
   them in both places together.
+
+---
+
+<div align="center">
+
+**Related:** [Architecture](./ARCHITECTURE.md) · [API](./API.md) · [Portable Apps RFC (SQLite adapter)](./PORTABLE_APPS.md)
+
+*© 2026 SmartNote Scheduler contributors · MIT License*
+
+</div>
