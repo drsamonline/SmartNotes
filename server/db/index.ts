@@ -13,7 +13,7 @@
  *   - No MySQL-only `result[0].insertId`: SQLite uses `$returningId()` / lastInsertRowid.
  *   - Timestamps are normalised to real `Date` objects on read (SQLite stores ISO text).
  */
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 
 
 import { ENV } from "../_core/env";
@@ -212,9 +212,16 @@ function normalizeRow<T extends Record<string, any>>(row: T): T {
   return row;
 }
 
-async function toSqlValue(v: unknown): Promise<unknown> {
-  if (v instanceof Date) return v.toISOString();
-  if (v instanceof Promise) return await v;
+/**
+ * Normalise a JS value for the active driver.
+ * - MySQL keeps real `Date` objects (drizzle's timestamp mapper calls
+ *   `.toISOString()` itself — passing a string would crash it).
+ * - SQLite has no date type, so Dates are stored as ISO-8601 TEXT and
+ *   converted back on read by `normalizeRow`.
+ */
+async function toSqlValue(v: unknown, driver: DbDriver = resolveDriver()): Promise<unknown> {
+  if (v instanceof Date) return driver === "sqlite" ? v.toISOString() : v;
+  if (v instanceof Promise) return toSqlValue(await v, driver);
   return v;
 }
 
@@ -225,13 +232,16 @@ async function insertReturningId(
   values: Record<string, unknown>,
 ): Promise<number> {
   const prepared: Record<string, unknown> = {};
-  for (const [k, val] of Object.entries(values)) prepared[k] = await toSqlValue(val);
+  for (const [k, val] of Object.entries(values)) prepared[k] = await toSqlValue(val, driver);
   if (driver === "mysql") {
     const result = await db.insert(table).values(prepared);
     return Number(result[0].insertId);
   }
-  const returning = await db.insert(table).values(prepared).$returningId();
-  return Number(returning[0].id);
+  // better-sqlite3 dialect in drizzle-orm does not support `$returningId()`
+  // (verified experimentally). `run()` on the query builder executes synchronously
+  // and returns better-sqlite3's info object ({ changes, lastInsertRowid }).
+  const info = db.insert(table).values(prepared).run() as { lastInsertRowid?: number | bigint };
+  return Number(info?.lastInsertRowid ?? 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,10 +356,13 @@ export async function updateNote(noteId: number, data: Partial<InsertNote>): Pro
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const t = tables(resolveDriver());
+  const driver = resolveDriver();
   const values: Record<string, unknown> = { ...data };
   delete values.updatedAt;
   // MySQL schema has onUpdateNow; emulate it for SQLite.
-  if (resolveDriver() === "sqlite") values.updatedAt = new Date().toISOString();
+  if (driver === "sqlite") values.updatedAt = new Date().toISOString();
+  // Normalise any remaining Date objects per driver (e.g. dueDate passed as Date).
+  for (const [k, val] of Object.entries(values)) values[k] = await toSqlValue(val, driver);
   await db.update(t.notes).set(values).where(eq(t.notes.id, noteId));
 }
 
@@ -378,20 +391,25 @@ export async function getNoteById(noteId: number): Promise<Note | null> {
 export async function createReminder(data: InsertReminder): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const driver = resolveDriver();
   const values: Record<string, unknown> = { ...data };
   delete values.createdAt;
-  await db.insert(tables(resolveDriver()).reminders).values(values);
+  for (const [k, val] of Object.entries(values)) values[k] = await toSqlValue(val, driver);
+  await db.insert(tables(driver).reminders).values(values);
 }
 
 /** Get pending reminders (not yet sent, due at or before `now`) */
 export async function getPendingReminders(now = new Date()): Promise<Reminder[]> {
   const db = await getDb();
   if (!db) return [];
-  const t = tables(resolveDriver());
+  const driver = resolveDriver();
+  const t = tables(driver);
+  // SQLite stores timestamps as ISO TEXT → compare with an ISO string bound value.
+  const threshold: string | Date = driver === "sqlite" ? now.toISOString() : now;
   const rows = await db
     .select()
     .from(t.reminders)
-    .where(and(eq(t.reminders.isSent, 0), lte(t.reminders.reminderTime, now)))
+    .where(and(eq(t.reminders.isSent, 0), lte(t.reminders.reminderTime, threshold)))
     .orderBy(t.reminders.reminderTime);
   return (rows as unknown[]).map((r) => normalizeRow(r as Reminder));
 }
@@ -428,9 +446,11 @@ export async function deleteRemindersForNote(noteId: number): Promise<void> {
 export async function createNotificationLog(data: InsertNotificationLog): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const driver = resolveDriver();
   const values: Record<string, unknown> = { ...data };
   delete values.createdAt;
-  await db.insert(tables(resolveDriver()).notificationLogs).values(values);
+  for (const [k, val] of Object.entries(values)) values[k] = await toSqlValue(val, driver);
+  await db.insert(tables(driver).notificationLogs).values(values);
 }
 
 export async function getNotificationHistory(userId: number): Promise<NotificationLog[]> {

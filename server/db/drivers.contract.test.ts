@@ -213,6 +213,15 @@ async function loadStorage(driver: "sqlite" | "mysql"): Promise<Storage> {
     for (const k of Object.keys(fakeDb)) delete fakeDb[k];
     mysqlCaptured.sql.length = 0;
     mysqlCaptured.values.length = 0;
+  } else {
+    // SQLite suites share the process-wide better-sqlite3 singleton connection;
+    // close it so a brand-new temp data dir is used and no state leaks across suites.
+    try {
+      const prev = await import("./index");
+      prev.closeDb();
+    } catch {
+      /* first load — nothing to close */
+    }
   }
   const dataDir = freshDataDir();
   process.env.SMARTNOTE_DATA_DIR = dataDir;
