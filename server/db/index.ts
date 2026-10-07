@@ -13,7 +13,7 @@
  *   - No MySQL-only `result[0].insertId`: SQLite uses `$returningId()` / lastInsertRowid.
  *   - Timestamps are normalised to real `Date` objects on read (SQLite stores ISO text).
  */
-import { and, desc, eq, getTableName, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 
 
 import { ENV } from "../_core/env";
@@ -249,36 +249,19 @@ async function insertReturningId(
 // ---------------------------------------------------------------------------
 
 /**
- * Raw read-only SQL execution that returns plain row objects on BOTH drivers.
+ * Existence probe: returns the first matching row (as `{ id: number }`) or
+ * undefined — implemented with Drizzle ORM queries ONLY, so both drivers use
+ * their normal, well-tested code path (no raw SQL, no private internals).
  *
- * Why not `db.execute(sql)`:
- *   - drizzle's mysql2 session attaches a field list (rowsAsArray mode), so
- *     real MySQL would return positional arrays; and its execute() unwraps the
- *     result to `result[0]`, which for INSERT/UPDATE packets is an OkPacket.
- *   - we therefore go through the underlying client directly:
- *       mysql2 pool.query("...")  → [rows[], fields[]] with object rows
- *       better-sqlite3 .prepare().all(...) → row objects (raw, unmapped)
+ * MySQL note: drizzle's mysql2 session runs SELECTs in `rowsAsArray` mode, but
+ * its prepared-query executor maps positional rows back into objects via
+ * `mapResultRow(fields, …)` before returning them — so `select({ id })` yields
+ * `{ id }` objects here too. Verified by the dual-driver contract tests.
  */
-async function selectRawRows(
-  db: AnyDb,
-  driver: DbDriver,
-  query: string,
-  params: unknown[]
-): Promise<Record<string, unknown>[]> {
-  if (driver === "mysql") {
-    // drizzle's MySql2Database keeps the mysql2 pool on its session (`db.session.client`).
-    const client = (
-      db as unknown as {
-        session?: { client: { query: (q: string, p?: unknown[]) => Promise<[unknown, unknown]> } };
-      }
-    ).session?.client;
-    if (!client) throw new Error("MySQL raw query: could not locate the mysql2 client on the drizzle instance");
-    const res = await client.query(query, params);
-    const rows = Array.isArray(res) ? res[0] : res;
-    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
-  }
-  const client = (db as unknown as { $client?: import("better-sqlite3").Database }).$client ?? (db as unknown as import("better-sqlite3").Database);
-  return client.prepare(query).all(...params) as Record<string, unknown>[];
+async function existsUserByOpenId(db: AnyDb, driver: DbDriver, openId: string): Promise<boolean> {
+  const t = tables(driver);
+  const rows = await db.select({ id: t.users.id }).from(t.users).where(eq(t.users.openId, openId)).limit(1);
+  return rows.length > 0 && Number.isFinite(Number((rows[0] as { id?: unknown }).id));
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -303,12 +286,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   try {
     // Existence probe for the select→insert/update upsert (no
-    // `onDuplicateKeyUpdate`, so this stays dialect-free). `selectRawRows`
-    // guarantees plain row objects on both drivers (see its doc comment).
-    const probeSql = `select \`id\` from \`${getTableName(t.users)}\` where \`openId\` = ? limit 1`;
-    const rows = await selectRawRows(db, driver, probeSql, [user.openId]);
-    const foundId = rows.length > 0 ? Number(rows[0].id) : undefined;
-    if (foundId != null && Number.isFinite(foundId)) {
+    // `onDuplicateKeyUpdate`, so this stays dialect-free). Uses a plain
+    // Drizzle SELECT — the same ORM path every other read uses.
+    const found = await existsUserByOpenId(db, driver, user.openId);
+    if (found) {
       const { openId, ...updateSet } = values;
       if (Object.keys(updateSet).length > 0) {
         await db.update(t.users).set(updateSet).where(eq(t.users.openId, user.openId));
