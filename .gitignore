@@ -1,8 +1,1 @@
-# Dependencies
-node_modules/
-
-# Build artifacts and caches
-dist/
-build/
-*.log
-*.tmp
+(empty)

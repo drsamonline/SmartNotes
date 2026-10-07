@@ -68,9 +68,17 @@ export function resolveDriver(): DbDriver {
 /** Test helper: forget the resolved driver/connection. */
 export function __resetDbForTests(): void {
   _driver = null;
-  if (_db && typeof _db.$client?.close === "function") {
+  closeDb();
+}
+
+/** Close the underlying connection (if open). Safe to call multiple times. */
+export function closeDb(): void {
+  if (_db) {
+    // mysql2/promise pool → .end(); better-sqlite3 → .close()
+    const endable = _db as unknown as { end?: () => Promise<unknown>; $client?: { close?: () => void } };
     try {
-      _db.$client.close();
+      if (typeof endable.end === "function") void endable.end();
+      else if (typeof endable.$client?.close === "function") endable.$client.close();
     } catch {
       /* ignore */
     }
@@ -78,7 +86,8 @@ export function __resetDbForTests(): void {
   _db = null;
 }
 
-const SQLITE_DDL = `
+/** Shared SQLite schema DDL — single source of truth for runtime, bootstrap, seed and tests. */
+export const SQLITE_DDL = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   openId TEXT NOT NULL UNIQUE,
@@ -134,9 +143,10 @@ CREATE INDEX IF NOT EXISTS notification_logs_note_id_idx ON notificationLogs(not
 
 async function createConnection(driver: DbDriver): Promise<AnyDb> {
   if (driver === "mysql") {
+    const mysql2 = await import("mysql2/promise");
     const { drizzle } = await import("drizzle-orm/mysql2");
-    // Lazy require keeps better-sqlite3 out of MySQL deployments.
-    return drizzle(process.env.DATABASE_URL!, { mode: "default" }) as unknown as AnyDb;
+    const pool = await mysql2.createPool(process.env.DATABASE_URL!);
+    return drizzle(pool) as unknown as AnyDb;
   }
   const [{ drizzle }, Database] = await Promise.all([
     import("drizzle-orm/better-sqlite3"),
@@ -190,15 +200,22 @@ function tables(driver: DbDriver): Tables {
 }
 
 /** Normalise a row coming back from either driver into app-shaped values. */
-function normalizeRow<T extends Record<string, unknown>>(row: T): T {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeRow<T extends Record<string, any>>(row: T): T {
   for (const key of Object.keys(row)) {
     const v = row[key];
     if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}[T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(v)) {
       const d = new Date(v.replace(" ", "T"));
-      if (!Number.isNaN(d.getTime())) row[key] = d;
+      if (!Number.isNaN(d.getTime())) (row as Record<string, unknown>)[key] = d;
     }
   }
   return row;
+}
+
+async function toSqlValue(v: unknown): Promise<unknown> {
+  if (v instanceof Date) return v.toISOString();
+  if (is(Promise, v)) return await v;
+  return v;
 }
 
 async function insertReturningId(
@@ -207,11 +224,13 @@ async function insertReturningId(
   table: AnyTable,
   values: Record<string, unknown>,
 ): Promise<number> {
+  const prepared: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(values)) prepared[k] = await toSqlValue(val);
   if (driver === "mysql") {
-    const result = await db.insert(table).values(values);
+    const result = await db.insert(table).values(prepared);
     return Number(result[0].insertId);
   }
-  const returning = await db.insert(table).values(values).$returningId();
+  const returning = await db.insert(table).values(prepared).$returningId();
   return Number(returning[0].id);
 }
 

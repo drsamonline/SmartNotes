@@ -6,6 +6,7 @@
  * MySQL schema (single source of truth for TS consumers).
  */
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import { index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable(
@@ -17,9 +18,9 @@ export const users = sqliteTable(
     email: text("email", { length: 320 }),
     loginMethod: text("loginMethod", { length: 64 }),
     role: text("role", { enum: ["user", "admin"] }).default("user").notNull(),
-    createdAt: text("createdAt").defaultNow().notNull(),
-    updatedAt: text("updatedAt").defaultNow().notNull(),
-    lastSignedIn: text("lastSignedIn").defaultNow().notNull(),
+    createdAt: text("createdAt").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
+    updatedAt: text("updatedAt").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
+    lastSignedIn: text("lastSignedIn").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
   },
   (table) => ({
     openIdIdx: uniqueIndex("users_openId_unique_idx").on(table.openId),
@@ -44,8 +45,8 @@ export const notes = sqliteTable(
     dueDate: text("dueDate"),
     scheduledDate: text("scheduledDate"),
     isCompleted: integer("isCompleted").default(0).notNull(),
-    createdAt: text("createdAt").defaultNow().notNull(),
-    updatedAt: text("updatedAt").defaultNow().notNull(),
+    createdAt: text("createdAt").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
+    updatedAt: text("updatedAt").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
   },
   (table) => ({
     userCategoryIdx: index("notes_user_category_idx").on(table.userId, table.category),
@@ -69,7 +70,7 @@ export const reminders = sqliteTable(
       .default("both")
       .notNull(),
     isSent: integer("isSent").default(0).notNull(),
-    createdAt: text("createdAt").defaultNow().notNull(),
+    createdAt: text("createdAt").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
   },
   (table) => ({
     dueReminderIdx: index("reminders_sent_time_idx").on(table.isSent, table.reminderTime),
@@ -91,7 +92,7 @@ export const notificationLogs = sqliteTable(
     title: text("title", { length: 255 }).notNull(),
     content: text("content").notNull(),
     error: text("error"),
-    createdAt: text("createdAt").defaultNow().notNull(),
+    createdAt: text("createdAt").default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`).notNull(),
   },
   (table) => ({
     userCreatedIdx: index("notification_logs_user_created_idx").on(table.userId, table.createdAt),

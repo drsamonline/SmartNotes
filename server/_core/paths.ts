@@ -43,6 +43,19 @@ export function isPackaged(): boolean {
   return process.env.SMARTNOTE_PACKAGED === "1";
 }
 
+/** Open (and if needed, create+bootstrap) a standalone better-sqlite3 handle for tooling/tests. */
+export async function openSqliteBootstrap(dbFile: string): Promise<{
+  client: import("better-sqlite3").Database;
+}> {
+  fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+  const mod = await import("better-sqlite3");
+  const Database = (mod.default ?? mod) as typeof import("better-sqlite3");
+  const client = new Database(dbFile);
+  client.pragma("journal_mode = WAL");
+  client.pragma("foreign_keys = ON");
+  return { client };
+}
+
 /** Resolve (but do not create) the data directory. */
 function resolveDataDir(): string {
   if (!_dataDir) {
