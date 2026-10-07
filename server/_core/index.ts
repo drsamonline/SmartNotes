@@ -11,8 +11,10 @@ import { processPendingReminders } from "../notifications";
 import { sdk } from "./sdk";
 import { getDb, resolveDriver } from "../db";
 import { APP_NAME, HELP_TEXT, getAppVersion, parseArgs } from "./cli";
-import { getDataDir } from "./paths";
+import { getDataDir, isPortableMode } from "./paths";
 import { createLogger, requestLoggingMiddleware } from "./logging";
+import { startLocalScheduler } from "./scheduler";
+import { writeSnapshot } from "./backup";
 
 const log = createLogger("server");
 const cliArgs = parseArgs(process.argv.slice(2));
@@ -127,6 +129,18 @@ async function startServer() {
       driver: resolveDriver(),
       dataDir: getDataDir(),
     });
+
+    // Portable/offline mode (Stage 1): no platform Heartbeat available →
+    // run reminders + nightly snapshots in-process. Both timers are unref'd.
+    if (isPortableMode()) {
+      startLocalScheduler();
+      const NIGHTLY_MS = 24 * 60 * 60 * 1000;
+      setInterval(
+        () =>
+          writeSnapshot().catch((e) => log.warn("Nightly snapshot failed", e)),
+        NIGHTLY_MS,
+      ).unref();
+    }
   });
 
   // ---------------------------------------------------------------------

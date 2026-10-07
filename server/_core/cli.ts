@@ -30,6 +30,10 @@ Options
   --data-dir <path>      Directory for the local database, backups and config
                          (default: OS user-data dir; "Data" next to the binary
                          in packaged/portable mode).
+  --backup               Create a backup ZIP in <data-dir>/backups and exit.
+  --setup                Run the interactive first-run configuration wizard
+                         (writes .env into the data dir) and exit.
+  --open                 Open the app in the default browser once it is up.
   --help, -h             Show this help and exit.
   --version, -v          Show the version and exit.
 
@@ -39,12 +43,16 @@ Environment
                          on a portable SQLite file inside the data dir.
   DB_DRIVER              "mysql" | "sqlite" — force a driver explicitly.
   SMARTNOTE_DATA_DIR     Same as --data-dir.
+  SMARTNOTE_PACKAGED     Set to 1 by portable launchers/binaries.
+  SMARTNOTE_SCHEDULER    Set to 0 to disable the in-process reminder timer.
+  SMARTNOTE_TICK_MS      Reminder tick interval in ms (default 60000).
   LOG_LEVEL              debug | info | warn | error (default: info).
   PORT                   Default listening port.
 
 Examples
   smartnote --port 8080
   smartnote --data-dir "D:\\SmartNotePortable\\Data"
+  smartnote --backup
 `;
 
 export interface CliArgs {
@@ -52,11 +60,14 @@ export interface CliArgs {
   version: boolean;
   port?: number;
   dataDir?: string;
+  backup: boolean;
+  setup: boolean;
+  open: boolean;
 }
 
 /** Minimal argv parser — no dependency, works under tsx/node/bundled exe. */
 export function parseArgs(argv: string[]): CliArgs {
-  const out: CliArgs = { help: false, version: false };
+  const out: CliArgs = { help: false, version: false, backup: false, setup: false, open: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--help" || a === "-h") out.help = true;
@@ -65,6 +76,9 @@ export function parseArgs(argv: string[]): CliArgs {
     else if (a.startsWith("--port=")) out.port = parseInt(a.slice(7), 10) || undefined;
     else if (a === "--data-dir" && argv[i + 1]) out.dataDir = argv[++i];
     else if (a.startsWith("--data-dir=")) out.dataDir = a.slice(11);
+    else if (a === "--backup") out.backup = true;
+    else if (a === "--setup") out.setup = true;
+    else if (a === "--open") out.open = true;
   }
   return out;
 }
