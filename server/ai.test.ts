@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractDateTimeFromText, combineDateAndTime, getNextDayOfWeek } from "./ai";
+import { extractDateTimeFromText, combineDateAndTime } from "./ai";
 
 describe("AI Service - Date/Time Extraction", () => {
   describe("extractDateTimeFromText", () => {

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import { spawn } from "node:child_process";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -57,7 +58,6 @@ function openInBrowser(url: string): void {
         : { file: "xdg-open", args: [url] };
   try {
     // Detached helper process; failures are non-fatal (we always print the URL).
-    const { spawn } = require("node:child_process") as typeof import("node:child_process");
     const child = spawn(cmd.file, cmd.args, { stdio: "ignore", detached: true });
     child.on("error", () => {});
     child.unref();

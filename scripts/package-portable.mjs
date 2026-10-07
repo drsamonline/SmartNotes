@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
+ 
 /**
  * Portable zip packaging script (Stage 1 — Enhancements #13 / #15 / #16).
  *

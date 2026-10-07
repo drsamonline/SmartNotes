@@ -15,8 +15,5 @@ export default tseslint.config(
       ],
     },
   },
-  {
-    files: ["client/**/*.{ts,tsx}"],
-    rules: { "react-hooks/exhaustive-deps": "warn" },
-  },
+  // react-hooks plugin is not installed; enable those rules only when it is added as a devDependency.
 );

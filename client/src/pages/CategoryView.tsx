@@ -11,7 +11,7 @@ import { NoteCategory } from "@shared/types";
 
 export default function CategoryView() {
   const { user } = useAuth();
-  const [match, params] = useRoute("/category/:category");
+  const [, params] = useRoute("/category/:category");
 
   const category = params?.category as NoteCategory | undefined;
   const [editingNote, setEditingNote] = useState<any>(null);

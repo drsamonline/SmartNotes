@@ -107,7 +107,7 @@ export async function runSetupWizard(): Promise<void> {
       console.log("        In-app reminders only (browser must be open while app runs).");
     }
 
-    let portRaw = (await ask(rl, "  [3/3] Port to serve on [3000]: ")).trim();
+    const portRaw = (await ask(rl, "  [3/3] Port to serve on [3000]: ")).trim();
     const portNum = Number.parseInt(portRaw || "3000", 10);
     if (Number.isFinite(portNum) && portNum > 0 && portNum < 65536) {
       values.set("PORT", String(portNum));
