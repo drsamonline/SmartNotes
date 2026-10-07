@@ -4,7 +4,7 @@ import {
   getPendingReminders,
   getUserById,
   markReminderAsSent,
-} from "./db";
+} from "./db/index";
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
 import type { Note, Reminder } from "../drizzle/schema";

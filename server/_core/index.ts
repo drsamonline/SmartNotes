@@ -9,6 +9,26 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { processPendingReminders } from "../notifications";
 import { sdk } from "./sdk";
+import { getDb, resolveDriver } from "../db";
+import { APP_NAME, HELP_TEXT, getAppVersion, parseArgs } from "./cli";
+import { getDataDir } from "./paths";
+import { createLogger, requestLoggingMiddleware } from "./logging";
+
+const log = createLogger("server");
+const cliArgs = parseArgs(process.argv.slice(2));
+
+if (cliArgs.help) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+if (cliArgs.version) {
+  console.log(`${APP_NAME} ${getAppVersion()}`);
+  process.exit(0);
+}
+if (cliArgs.dataDir) {
+  // Let the paths resolver see it via env as well.
+  process.env.SMARTNOTE_DATA_DIR = cliArgs.dataDir;
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,9 +52,33 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Correlation IDs + structured request logs (must run before route handlers).
+  app.use(requestLoggingMiddleware as unknown as express.RequestHandler);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Liveness/readiness probe — cheap, no auth, safe for monitors & launchers.
+  app.get("/healthz", async (_req, res) => {
+    try {
+      let dbOk = false;
+      try {
+        const db = await getDb();
+        dbOk = db != null;
+      } catch {
+        dbOk = false;
+      }
+      res.status(dbOk ? 200 : 503).json({
+        ok: dbOk,
+        version: getAppVersion(),
+        driver: resolveDriver(),
+        dataDir: getDataDir(),
+        uptimeSec: Math.round(process.uptime()),
+      });
+    } catch (error) {
+      log.error("healthz failed", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // Durable reminder callback invoked by a Manus Heartbeat job.
@@ -48,7 +92,7 @@ async function startServer() {
       await processPendingReminders();
       return res.json({ ok: true });
     } catch (error) {
-      console.error("[Notifications] Scheduled reminder callback failed:", error);
+      log.error("Scheduled reminder callback failed", error);
       return res.status(500).json({
         error: String(error),
         timestamp: new Date().toISOString(),
@@ -70,16 +114,46 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
+  const preferredPort = cliArgs.port ?? parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    log.warn(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    log.info(`${APP_NAME} v${getAppVersion()} listening`, {
+      url: `http://localhost:${port}/`,
+      driver: resolveDriver(),
+      dataDir: getDataDir(),
+    });
   });
+
+  // ---------------------------------------------------------------------
+  // Graceful shutdown (Stage 0 — #20): stop accepting connections, drain,
+  // then exit. SIGINT covers Ctrl+C in a portable terminal window.
+  // ---------------------------------------------------------------------
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log.info(`Received ${signal}, shutting down gracefully…`);
+    const force = setTimeout(() => {
+      log.warn("Forcing exit after 10s drain timeout");
+      process.exit(1);
+    }, 10_000);
+    force.unref();
+    server.close((err) => {
+      if (err) log.error("Error while closing HTTP server", err);
+      clearTimeout(force);
+      process.exit(err ? 1 : 0);
+    });
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-startServer().catch(console.error);
+startServer().catch((error) => {
+  log.error("Failed to start server", error);
+  process.exit(1);
+});

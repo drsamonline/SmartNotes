@@ -12,7 +12,7 @@ import {
   createReminder,
   getRemindersForNote,
   deleteRemindersForNote,
-} from "./db";
+} from "./db/index";
 import { analyzeNoteContent, combineDateAndTime } from "./ai";
 import { notifyOwner } from "./_core/notification";
 

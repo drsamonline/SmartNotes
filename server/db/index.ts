@@ -1,0 +1,441 @@
+/**
+ * Dual-driver storage layer (Stage 0 — Enhancement #47 groundwork, Stage 1 enabler #12).
+ *
+ * Every public function keeps the exact signature of the legacy `server/db.ts`
+ * so existing callers (`notes.router`, `notifications`, `_core/oauth`, `_core/sdk`)
+ * are unaffected. The concrete driver is chosen by configuration:
+ *
+ *   DB_DRIVER=sqlite | SMARTNOTE_DATA_DIR set without DATABASE_URL → SQLite (portable/offline)
+ *   otherwise, with DATABASE_URL                                     → MySQL (cloud/hosted)
+ *
+ * Portability rules honoured here:
+ *   - No `onDuplicateKeyUpdate`: upsertUser runs select→insert/update on both drivers.
+ *   - No MySQL-only `result[0].insertId`: SQLite uses `$returningId()` / lastInsertRowid.
+ *   - Timestamps are normalised to real `Date` objects on read (SQLite stores ISO text).
+ */
+import { and, desc, eq, lte } from "drizzle-orm";
+
+
+import { ENV } from "../_core/env";
+import { createLogger } from "../_core/logging";
+import { getDataDir, getSqliteDbPath } from "../_core/paths";
+import {
+  InsertNotificationLog,
+  InsertNote,
+  InsertReminder,
+  InsertUser,
+  NotificationLog,
+  Note,
+  Reminder,
+  User,
+  notificationLogs as mysqlNotificationLogs,
+  notes as mysqlNotes,
+  reminders as mysqlReminders,
+  users as mysqlUsers,
+} from "../../drizzle/schema";
+import {
+  notificationLogs as sqliteNotificationLogs,
+  notes as sqliteNotes,
+  reminders as sqliteReminders,
+  users as sqliteUsers,
+} from "./schema.sqlite";
+
+const log = createLogger("db");
+
+export type DbDriver = "mysql" | "sqlite";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyTable = any;
+// A query-builder-capable drizzle instance for either dialect.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDb = any;
+
+let _driver: DbDriver | null = null;
+let _db: AnyDb | null = null;
+
+/** Decide (and memoize) which driver to use. */
+export function resolveDriver(): DbDriver {
+  if (_driver) return _driver;
+  const explicit = (process.env.DB_DRIVER ?? "").toLowerCase();
+  if (explicit === "sqlite") _driver = "sqlite";
+  else if (explicit === "mysql") _driver = "mysql";
+  else if (explicit) throw new Error(`Unknown DB_DRIVER "${explicit}" (expected mysql|sqlite)`);
+  else if (process.env.DATABASE_URL && !/^file:/i.test(process.env.DATABASE_URL)) _driver = "mysql";
+  else _driver = "sqlite";
+  return _driver;
+}
+
+/** Test helper: forget the resolved driver/connection. */
+export function __resetDbForTests(): void {
+  _driver = null;
+  if (_db && typeof _db.$client?.close === "function") {
+    try {
+      _db.$client.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  _db = null;
+}
+
+const SQLITE_DDL = `
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  openId TEXT NOT NULL UNIQUE,
+  name TEXT,
+  email TEXT,
+  loginMethod TEXT,
+  role TEXT NOT NULL DEFAULT 'user',
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  lastSignedIn TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  userId INTEGER NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  category TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'Medium',
+  dueDate TEXT,
+  scheduledDate TEXT,
+  isCompleted INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS notes_user_category_idx ON notes(userId, category);
+CREATE INDEX IF NOT EXISTS notes_user_due_date_idx ON notes(userId, dueDate);
+CREATE INDEX IF NOT EXISTS notes_user_scheduled_date_idx ON notes(userId, scheduledDate);
+CREATE TABLE IF NOT EXISTS reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  noteId INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  reminderTime TEXT NOT NULL,
+  notificationType TEXT NOT NULL DEFAULT 'both',
+  isSent INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS reminders_sent_time_idx ON reminders(isSent, reminderTime);
+CREATE INDEX IF NOT EXISTS reminders_note_id_idx ON reminders(noteId);
+CREATE TABLE IF NOT EXISTS notificationLogs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  userId INTEGER NOT NULL REFERENCES users(id),
+  noteId INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+  reminderId INTEGER REFERENCES reminders(id) ON DELETE SET NULL,
+  channel TEXT NOT NULL,
+  status TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  error TEXT,
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS notification_logs_user_created_idx ON notificationLogs(userId, createdAt);
+CREATE INDEX IF NOT EXISTS notification_logs_note_id_idx ON notificationLogs(noteId);
+`;
+
+async function createConnection(driver: DbDriver): Promise<AnyDb> {
+  if (driver === "mysql") {
+    const { drizzle } = await import("drizzle-orm/mysql2");
+    // Lazy require keeps better-sqlite3 out of MySQL deployments.
+    return drizzle(process.env.DATABASE_URL!, { mode: "default" }) as unknown as AnyDb;
+  }
+  const [{ drizzle }, Database] = await Promise.all([
+    import("drizzle-orm/better-sqlite3"),
+    import("better-sqlite3").then((m) => (m.default ?? m)),
+  ]);
+  getDataDir(); // ensure dir exists before opening the file
+  const client = new (Database as typeof import("better-sqlite3"))(getSqliteDbPath());
+  client.pragma("journal_mode = WAL");
+  client.pragma("foreign_keys = ON");
+  client.exec(SQLITE_DDL);
+  return drizzle(client) as unknown as AnyDb;
+}
+
+/** Lazily open (and memoize) the connection for the configured driver. */
+export async function getDb(): Promise<AnyDb | null> {
+  if (_db) return _db;
+  const driver = resolveDriver();
+  if (driver === "mysql" && !process.env.DATABASE_URL) {
+    log.warn("MySQL driver selected but DATABASE_URL is missing; storage disabled");
+    return null;
+  }
+  try {
+    _db = await createConnection(driver);
+    log.info(`Storage ready (driver=${driver}${driver === "sqlite" ? `, file=${getSqliteDbPath()}` : ""})`);
+  } catch (error) {
+    log.error("Failed to open database", error);
+    return null;
+  }
+  return _db;
+}
+
+export function getDriver(): DbDriver | null {
+  return _driver;
+}
+
+// ---------------------------------------------------------------------------
+// Driver adapters — the only dialect-aware code lives here.
+// ---------------------------------------------------------------------------
+
+interface Tables {
+  users: AnyTable;
+  notes: AnyTable;
+  reminders: AnyTable;
+  notificationLogs: AnyTable;
+}
+
+function tables(driver: DbDriver): Tables {
+  return driver === "mysql"
+    ? { users: mysqlUsers, notes: mysqlNotes, reminders: mysqlReminders, notificationLogs: mysqlNotificationLogs }
+    : { users: sqliteUsers, notes: sqliteNotes, reminders: sqliteReminders, notificationLogs: sqliteNotificationLogs };
+}
+
+/** Normalise a row coming back from either driver into app-shaped values. */
+function normalizeRow<T extends Record<string, unknown>>(row: T): T {
+  for (const key of Object.keys(row)) {
+    const v = row[key];
+    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}[T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(v)) {
+      const d = new Date(v.replace(" ", "T"));
+      if (!Number.isNaN(d.getTime())) row[key] = d;
+    }
+  }
+  return row;
+}
+
+async function insertReturningId(
+  driver: DbDriver,
+  db: AnyDb,
+  table: AnyTable,
+  values: Record<string, unknown>,
+): Promise<number> {
+  if (driver === "mysql") {
+    const result = await db.insert(table).values(values);
+    return Number(result[0].insertId);
+  }
+  const returning = await db.insert(table).values(values).$returningId();
+  return Number(returning[0].id);
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+export async function upsertUser(user: InsertUser): Promise<void> {
+  if (!user.openId) {
+    throw new Error("User openId is required for upsert");
+  }
+  const db = await getDb();
+  if (!db) {
+    log.warn("Cannot upsert user: database not available");
+    return;
+  }
+  const driver = resolveDriver();
+  const t = tables(driver);
+
+  const values: Record<string, unknown> = { openId: user.openId };
+  for (const field of ["name", "email", "loginMethod", "role"] as const) {
+    if (user[field] !== undefined) values[field] = user[field];
+  }
+  if (user.lastSignedIn !== undefined) values.lastSignedIn = user.lastSignedIn;
+  if (values.role === undefined && user.openId === ENV.ownerOpenId) values.role = "admin";
+  if (!values.lastSignedIn) values.lastSignedIn = new Date();
+
+  try {
+    const existing = await db.select().from(t.users).where(eq(t.users.openId, user.openId)).limit(1);
+    const found = existing[0] as { id: number } | undefined;
+    if (found) {
+      const { openId, ...updateSet } = values;
+      if (Object.keys(updateSet).length > 0) {
+        await db.update(t.users).set(updateSet).where(eq(t.users.id, found.id));
+      }
+    } else {
+      await db.insert(t.users).values(values);
+    }
+  } catch (error) {
+    log.error("Failed to upsert user", error);
+    throw error;
+  }
+}
+
+export async function getUserByOpenId(openId: string): Promise<User | undefined> {
+  const db = await getDb();
+  if (!db) {
+    log.warn("Cannot get user: database not available");
+    return undefined;
+  }
+  const t = tables(resolveDriver());
+  const result = await db.select().from(t.users).where(eq(t.users.openId, openId)).limit(1);
+  return result.length > 0 ? (normalizeRow(result[0]) as User) : undefined;
+}
+
+export async function getUserById(userId: number): Promise<User | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const t = tables(resolveDriver());
+  const result = await db.select().from(t.users).where(eq(t.users.id, userId)).limit(1);
+  return result[0] ? (normalizeRow(result[0]) as User) : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+
+/** Get all notes for a user */
+export async function getUserNotes(userId: number): Promise<Note[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const t = tables(resolveDriver());
+  const rows = await db
+    .select()
+    .from(t.notes)
+    .where(eq(t.notes.userId, userId))
+    .orderBy(desc(t.notes.createdAt), desc(t.notes.id));
+  return (rows as unknown[]).map((r) => normalizeRow(r as Note));
+}
+
+/** Get notes by category for a user */
+export async function getNotesByCategory(
+  userId: number,
+  category: "Tasks" | "Deadlines" | "Schedule" | "Thoughts" | "Learning",
+): Promise<Note[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const t = tables(resolveDriver());
+  const rows = await db
+    .select()
+    .from(t.notes)
+    .where(and(eq(t.notes.userId, userId), eq(t.notes.category, category)))
+    .orderBy(desc(t.notes.createdAt), desc(t.notes.id));
+  return (rows as unknown[]).map((r) => normalizeRow(r as Note));
+}
+
+/** Create a new note; returns the new row id. */
+export async function createNote(data: InsertNote): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const values: Record<string, unknown> = { ...data };
+  for (const k of ["createdAt", "updatedAt"]) delete values[k];
+  return insertReturningId(resolveDriver(), db, tables(resolveDriver()).notes, values);
+}
+
+/** Update a note */
+export async function updateNote(noteId: number, data: Partial<InsertNote>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const t = tables(resolveDriver());
+  const values: Record<string, unknown> = { ...data };
+  delete values.updatedAt;
+  // MySQL schema has onUpdateNow; emulate it for SQLite.
+  if (resolveDriver() === "sqlite") values.updatedAt = new Date().toISOString();
+  await db.update(t.notes).set(values).where(eq(t.notes.id, noteId));
+}
+
+/** Delete a note */
+export async function deleteNote(noteId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const t = tables(resolveDriver());
+  await db.delete(t.notes).where(eq(t.notes.id, noteId));
+}
+
+/** Get a single note by ID */
+export async function getNoteById(noteId: number): Promise<Note | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const t = tables(resolveDriver());
+  const result = await db.select().from(t.notes).where(eq(t.notes.id, noteId)).limit(1);
+  return result.length > 0 ? (normalizeRow(result[0]) as Note) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Reminders
+// ---------------------------------------------------------------------------
+
+/** Create a reminder */
+export async function createReminder(data: InsertReminder): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const values: Record<string, unknown> = { ...data };
+  delete values.createdAt;
+  await db.insert(tables(resolveDriver()).reminders).values(values);
+}
+
+/** Get pending reminders (not yet sent, due at or before `now`) */
+export async function getPendingReminders(now = new Date()): Promise<Reminder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const t = tables(resolveDriver());
+  const rows = await db
+    .select()
+    .from(t.reminders)
+    .where(and(eq(t.reminders.isSent, 0), lte(t.reminders.reminderTime, now)))
+    .orderBy(t.reminders.reminderTime);
+  return (rows as unknown[]).map((r) => normalizeRow(r as Reminder));
+}
+
+/** Mark reminder as sent */
+export async function markReminderAsSent(reminderId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const t = tables(resolveDriver());
+  await db.update(t.reminders).set({ isSent: 1 }).where(eq(t.reminders.id, reminderId));
+}
+
+/** Get reminders for a note */
+export async function getRemindersForNote(noteId: number): Promise<Reminder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const t = tables(resolveDriver());
+  const rows = await db.select().from(t.reminders).where(eq(t.reminders.noteId, noteId));
+  return (rows as unknown[]).map((r) => normalizeRow(r as Reminder));
+}
+
+/** Delete reminders for a note */
+export async function deleteRemindersForNote(noteId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const t = tables(resolveDriver());
+  await db.delete(t.reminders).where(eq(t.reminders.noteId, noteId));
+}
+
+// ---------------------------------------------------------------------------
+// Notification logs
+// ---------------------------------------------------------------------------
+
+export async function createNotificationLog(data: InsertNotificationLog): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const values: Record<string, unknown> = { ...data };
+  delete values.createdAt;
+  await db.insert(tables(resolveDriver()).notificationLogs).values(values);
+}
+
+export async function getNotificationHistory(userId: number): Promise<NotificationLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const t = tables(resolveDriver());
+  const rows = await db
+    .select()
+    .from(t.notificationLogs)
+    .where(eq(t.notificationLogs.userId, userId))
+    .orderBy(desc(t.notificationLogs.createdAt), desc(t.notificationLogs.id))
+    .limit(100);
+  return (rows as unknown[]).map((r) => normalizeRow(r as NotificationLog));
+}
+
+// ---------------------------------------------------------------------------
+// Stats
+// ---------------------------------------------------------------------------
+
+/** Get notes stats for a user */
+export async function getNoteStats(userId: number) {
+  const db = await getDb();
+  if (!db) return { total: 0, completed: 0, pending: 0, overdue: 0 };
+  const t = tables(resolveDriver());
+  const allNotes = (await db.select().from(t.notes).where(eq(t.notes.userId, userId))) as Note[];
+  const normalized = allNotes.map((n) => normalizeRow(n));
+  const completed = normalized.filter((n) => n.isCompleted).length;
+  const pending = normalized.length - completed;
+  const now = new Date();
+  const overdue = normalized.filter((n) => !n.isCompleted && n.dueDate && n.dueDate < now).length;
+  return { total: normalized.length, completed, pending, overdue };
+}
