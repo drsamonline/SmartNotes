@@ -80,6 +80,7 @@ function runFakeSql(sql: string, params: unknown[]): [unknown, unknown] {
     const cols = parseSelectColumns(selectList);
     const whereRaw = /where\s+(.*?)(?:\s+order\b|\s+limit\b|$)/i.exec(rest)?.[1];
     let rows = [...t.rows];
+    console.error("[FAKE] SELECT on", name, "rows=", JSON.stringify(t.rows), "where=", whereRaw, "params=", JSON.stringify(params));
     if (whereRaw) {
       const savedPi = pi.i;
       rows = rows.filter((r) => {
@@ -121,11 +122,15 @@ function runFakeSql(sql: string, params: unknown[]): [unknown, unknown] {
     const [, name, colsRaw, tuplesRaw] = m;
     const t = table(name);
     const cols = colsRaw.split(",").map((c) => c.trim().replace(/`/g, ""));
-    const tuples = tuplesRaw.match(/\([^)]*\)/g) ?? [];
+    const tuples = (tuplesRaw.replace(/\(\s*default\s*(,|$)/gi, "($1").match(/\([^)]*\)/g) ?? []);
     const firstId = t.nextId;
     for (const _tpl of tuples) {
       const row: Row = {};
+      const phCount = (_tpl.match(/\?/g) ?? []).length;
+      let assigned = 0;
       cols.forEach((c) => {
+        if (assigned >= phCount) return; // trailing `default` columns â†’ no param
+        assigned++;
         row[c] = params[pi.i++];
       });
       row.id = t.nextId++;
@@ -220,7 +225,7 @@ async function loadStorage(driver: "sqlite" | "mysql"): Promise<Storage> {
       const prev = await import("./index");
       prev.closeDb();
     } catch {
-      /* first load — nothing to close */
+      /* first load - nothing to close */
     }
   }
   const dataDir = freshDataDir();
@@ -380,6 +385,7 @@ describe("dual-driver storage (Stage 0 gate)", () => {
     expect(user).toBeDefined();
     return { db, userId: user!.id };
   });
+
 
   // --- MySQL: production code path against the embedded SQL fake -----------
   defineContract("mysql", async () => {

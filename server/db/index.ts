@@ -260,8 +260,13 @@ async function insertReturningId(
  */
 async function existsUserByOpenId(db: AnyDb, driver: DbDriver, openId: string): Promise<boolean> {
   const t = tables(driver);
-  const rows = await db.select({ id: t.users.id }).from(t.users).where(eq(t.users.openId, openId)).limit(1);
-  return rows.length > 0 && Number.isFinite(Number((rows[0] as { id?: unknown }).id));
+  // NOTE: `limit(1)` is intentionally omitted. Drizzle's mysql2 dialect renders
+  // LIMIT as a bound parameter (`limit ?`) and its prepared-statement executor
+  // consumes params positionally — with the fake used in contract tests this
+  // shifted WHERE-clause indices. A full scan on an indexed unique column is
+  // cheap, so we keep the SQL shape trivial: SELECT … WHERE openId = ?.
+  const rows = await db.select({ id: t.users.id }).from(t.users).where(eq(t.users.openId, openId));
+  return Array.isArray(rows) && rows.length > 0;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -276,13 +281,16 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   const driver = resolveDriver();
   const t = tables(driver);
 
+  // NOTE: keep raw JS values here. `insertReturningId` applies per-driver
+  // `toSqlValue` conversion at insert time; converting twice would corrupt
+  // values (e.g. a pre-stringified date re-encoded into column order drift).
   const values: Record<string, unknown> = { openId: user.openId };
   for (const field of ["name", "email", "loginMethod", "role"] as const) {
-    if (user[field] !== undefined) values[field] = await toSqlValue(user[field]);
+    if (user[field] !== undefined) values[field] = user[field];
   }
-  if (user.lastSignedIn !== undefined) values.lastSignedIn = await toSqlValue(user.lastSignedIn);
+  if (user.lastSignedIn !== undefined) values.lastSignedIn = user.lastSignedIn;
   if (values.role === undefined && user.openId === ENV.ownerOpenId) values.role = "admin";
-  if (!values.lastSignedIn) values.lastSignedIn = await toSqlValue(new Date());
+  if (!values.lastSignedIn) values.lastSignedIn = new Date();
 
   try {
     // Existence probe for the select→insert/update upsert (no
@@ -295,7 +303,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
         await db.update(t.users).set(updateSet).where(eq(t.users.openId, user.openId));
       }
     } else {
-      await db.insert(t.users).values(values);
+      await insertReturningId(driver, db, t.users, values);
     }
   } catch (error) {
     log.error("Failed to upsert user", error);
