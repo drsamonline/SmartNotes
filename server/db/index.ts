@@ -13,7 +13,7 @@
  *   - No MySQL-only `result[0].insertId`: SQLite uses `$returningId()` / lastInsertRowid.
  *   - Timestamps are normalised to real `Date` objects on read (SQLite stores ISO text).
  */
-import { and, desc, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, getTableName, lte, sql } from "drizzle-orm";
 
 
 import { ENV } from "../_core/env";
@@ -248,6 +248,39 @@ async function insertReturningId(
 // Users
 // ---------------------------------------------------------------------------
 
+/**
+ * Raw read-only SQL execution that returns plain row objects on BOTH drivers.
+ *
+ * Why not `db.execute(sql)`:
+ *   - drizzle's mysql2 session attaches a field list (rowsAsArray mode), so
+ *     real MySQL would return positional arrays; and its execute() unwraps the
+ *     result to `result[0]`, which for INSERT/UPDATE packets is an OkPacket.
+ *   - we therefore go through the underlying client directly:
+ *       mysql2 pool.query("...")  → [rows[], fields[]] with object rows
+ *       better-sqlite3 .prepare().all(...) → row objects (raw, unmapped)
+ */
+async function selectRawRows(
+  db: AnyDb,
+  driver: DbDriver,
+  query: string,
+  params: unknown[]
+): Promise<Record<string, unknown>[]> {
+  if (driver === "mysql") {
+    // drizzle's MySql2Database keeps the mysql2 pool on its session (`db.session.client`).
+    const client = (
+      db as unknown as {
+        session?: { client: { query: (q: string, p?: unknown[]) => Promise<[unknown, unknown]> } };
+      }
+    ).session?.client;
+    if (!client) throw new Error("MySQL raw query: could not locate the mysql2 client on the drizzle instance");
+    const res = await client.query(query, params);
+    const rows = Array.isArray(res) ? res[0] : res;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+  const client = (db as unknown as { $client?: import("better-sqlite3").Database }).$client ?? (db as unknown as import("better-sqlite3").Database);
+  return client.prepare(query).all(...params) as Record<string, unknown>[];
+}
+
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
@@ -270,31 +303,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   try {
     // Existence probe for the select→insert/update upsert (no
-    // `onDuplicateKeyUpdate`, so this stays dialect-free). We deliberately do
-    // NOT use a Drizzle select with an explicit field list here: drizzle's
-    // mysql2 session switches to `rowsAsArray` mode whenever fields are
-    // present, returning positional arrays that bypass column mapping. The
-    // raw path returns plain shapes on both drivers:
-    //   - mysql2   → [rows[], header[]] where rows are objects when no field
-    //                list is attached (the fake/real driver case) or arrays
-    //                otherwise; we normalise both.
-    //   - better-sqlite3 → ExecuteResultSync whose value is stmt.all() row
-    //                objects (unmapped, hence numeric-string ids possible).
-    const probeSql = `select \`id\` from \`${t.users.getTableName()}\` where \`openId\` = ? limit 1`;
-    const raw = await db.execute(probeSql, [user.openId]);
-    const rows: unknown[] = Array.isArray(raw)
-      ? (Array.isArray(raw[0]) || (raw[0] && typeof raw[0] === "object" && !("id" in (raw[0] as object)) && !(raw[0] as object))
-          ? (raw[0] as unknown[])
-          : (raw as unknown[]))
-      : Array.isArray(raw)
-        ? (raw as unknown[])
-        : [];
-    let foundId: number | undefined;
-    const firstRow = rows[0];
-    if (firstRow != null) {
-      const idVal = Array.isArray(firstRow) ? firstRow[0] : (firstRow as { id?: unknown }).id;
-      foundId = Number(idVal);
-    }
+    // `onDuplicateKeyUpdate`, so this stays dialect-free). `selectRawRows`
+    // guarantees plain row objects on both drivers (see its doc comment).
+    const probeSql = `select \`id\` from \`${getTableName(t.users)}\` where \`openId\` = ? limit 1`;
+    const rows = await selectRawRows(db, driver, probeSql, [user.openId]);
+    const foundId = rows.length > 0 ? Number(rows[0].id) : undefined;
     if (foundId != null && Number.isFinite(foundId)) {
       const { openId, ...updateSet } = values;
       if (Object.keys(updateSet).length > 0) {
