@@ -1,4 +1,12 @@
-# Contributing to SmartNote Scheduler
+<div align="center">
+
+# 🤝 Contributing to SmartNote Scheduler
+
+*Set up, build, break, fix — we welcome careful pull requests.*
+
+[Setup](#getting-set-up) · [Workflow](#workflow) · [Conventions](#conventions) · [Roadmap](./docs/IMPLEMENTATION_PLAN.md)
+
+</div>
 
 Thanks for your interest in improving SmartNote Scheduler! This guide covers
 setting up a development environment, the workflow we use, and the conventions
@@ -106,3 +114,13 @@ secrets). For notification problems, include the affected note ID and the
 
 By contributing, you agree that your contributions will be licensed under the
 project's [MIT License](./LICENSE).
+
+---
+
+<div align="center">
+
+**Related:** [Architecture](./docs/ARCHITECTURE.md) · [Enhancement Backlog](./docs/ENHANCEMENTS.md) · [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md)
+
+*© 2026 SmartNote Scheduler contributors · MIT License*
+
+</div>

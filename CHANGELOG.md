@@ -1,10 +1,39 @@
-# Changelog
+<div align="center">
 
-All notable changes to **SmartNote Scheduler** are documented in this file.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/).
+# 🔄 Changelog
 
-## [1.0.0] — 2026-10-07
+**SmartNote Scheduler** — release history
+
+*Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/)*
+
+</div>
+
+---
+
+## 📖 Versions
+
+| Version | Date | Highlights |
+|---|---|---|
+| [1.1.0-unreleased](#-unreleased--planned) | — | Portable apps & enhancement roadmap (see [docs](./docs/IMPLEMENTATION_PLAN.md)) |
+| [1.0.0](#-100--2026-10-07) | 2026-10-07 | First stable release |
+
+---
+
+## 💡 Unreleased / Planned
+
+### Added *(planned — approved scope pending)*
+
+- **Portable app deliverables**: Windows `.exe` and Linux portable/AppImage builds
+  ([design RFC](./docs/PORTABLE_APPS.md), [staged plan](./docs/IMPLEMENTATION_PLAN.md)).
+- Embedded SQLite driver for offline single-file deployments (dual-driver with MySQL).
+- Recurring reminders, snooze presets, quiet hours and idempotent notification delivery.
+- Tags, pinning, quick-capture palette mode, dark/light theme toggle.
+- Full 50-item non-bloat enhancement backlog published in
+  [docs/ENHANCEMENTS.md](./docs/ENHANCEMENTS.md).
+
+---
+
+## 🚀 [1.0.0] — 2026-10-07
 
 First stable release of SmartNote Scheduler: an AI-powered note categorization
 and reminder scheduling app with a brutalist design system.
@@ -72,3 +101,11 @@ and reminder scheduling app with a brutalist design system.
   `POST /api/scheduled/process-reminders` endpoint.
 
 [1.0.0]: https://github.com/your-org/smartnote-scheduler/releases/tag/v1.0.0
+
+---
+
+<div align="center">
+
+*© 2026 SmartNote Scheduler contributors · MIT License*
+
+</div>

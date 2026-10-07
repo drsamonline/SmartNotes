@@ -1,4 +1,18 @@
-# SmartNote Scheduler
+<div align="center">
+
+# 🗒️ SmartNote Scheduler
+
+**AI-powered notes · reminders · brutalist design**
+
+`v1.0.0` · MIT License · React 19 · tRPC 11 · Drizzle ORM
+
+*Capture in plain English — SmartNote classifies, prioritizes and schedules for you.*
+
+[Features](#-features) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Roadmap](./docs/IMPLEMENTATION_PLAN.md)
+
+</div>
+
+---
 
 An AI-powered note capture, categorization, and reminder scheduling app with a
 brutalist UI. Write notes in plain natural language — SmartNote uses an LLM to
@@ -7,6 +21,8 @@ dates/times ("tomorrow at 3pm") so nothing slips through the cracks.
 
 - **License:** MIT — see [LICENSE](./LICENSE)
 - **Version:** 1.0.0
+- **Portable apps (planned):** Windows `.exe` + Linux portable builds —
+  design in [docs/PORTABLE_APPS.md](./docs/PORTABLE_APPS.md)
 
 ## Features
 
@@ -185,17 +201,30 @@ export/import round-trips, templates, preferences, and reminder delivery
 - Firefox/Safari checks are recommended post-deployment (not available in the
   development sandbox).
 
-## Documentation Set
+## 📚 Documentation Set
 
-- [README.md](./README.md) — this file (overview, setup, usage)
-- [LICENSE](./LICENSE) — MIT license
-- [CHANGELOG.md](./CHANGELOG.md) — release history
-- [CONTRIBUTING.md](./CONTRIBUTING.md) — development workflow & guidelines
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — system design deep dive
-- [docs/API.md](./docs/API.md) — API reference
-- [docs/DATABASE.md](./docs/DATABASE.md) — schema & migrations
-- [todo.md](./todo.md) — project task tracker
+| Document | Purpose |
+|---|---|
+| [README.md](./README.md) | This file — overview, setup, usage |
+| [LICENSE](./LICENSE) | MIT license |
+| [CHANGELOG.md](./CHANGELOG.md) | Release history |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Development workflow & guidelines |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System design deep dive |
+| [docs/API.md](./docs/API.md) | tRPC + REST API reference |
+| [docs/DATABASE.md](./docs/DATABASE.md) | Schema & migrations |
+| ⭐ [docs/ENHANCEMENTS.md](./docs/ENHANCEMENTS.md) | **50 non-bloat enhancements backlog** |
+| ⭐ [docs/PORTABLE_APPS.md](./docs/PORTABLE_APPS.md) | **Windows `.exe` + Linux portable app design (RFC)** |
+| ⭐ [docs/IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md) | **Staged delivery plan (Stages 0–5) with go/no-go gates** |
+| [todo.md](./todo.md) | Project task tracker |
 
-## License
+## 📄 License
 
-Distributed under the **MIT License**. See [LICENSE](./LICENSE) for details.
+Distributed under the **MIT License** — see [LICENSE](./LICENSE) for details.
+
+---
+
+<div align="center">
+
+Made with 🖤 and a brutalist streak · **© 2026 SmartNote Scheduler contributors**
+
+</div>

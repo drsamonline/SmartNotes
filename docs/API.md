@@ -1,4 +1,13 @@
-# SmartNote Scheduler — API Reference
+<div align="center">
+
+# 🛰️ SmartNote Scheduler — API Reference
+
+*tRPC 11 · superjson · Zod-validated — exact input shapes verified from source*
+
+[Architecture](./ARCHITECTURE.md) · [Database](./DATABASE.md) · [Backlog](./ENHANCEMENTS.md)
+
+</div>
+
 
 Base URL: `/api/trpc` (tRPC v11, superjson serialization) plus two REST
 callbacks under `/api/`.
@@ -156,3 +165,13 @@ const create = trpc.notes.create.useMutation({
 });
 create.mutate({ content: "Submit report tomorrow at 3pm" });
 ```
+
+---
+
+<div align="center">
+
+**Related:** [Architecture](./ARCHITECTURE.md) · [Database](./DATABASE.md) · [Enhancements](./ENHANCEMENTS.md)
+
+*© 2026 SmartNote Scheduler contributors · MIT License*
+
+</div>
