@@ -195,7 +195,7 @@ async function checkpointWal(): Promise<void> {
     client.pragma("wal_checkpoint(TRUNCATE)");
     client.close();
   } catch (error) {
-    log.warn("WAL checkpoint skipped", error);
+    log.warn("WAL checkpoint skipped", undefined, error);
   }
 }
 
@@ -229,7 +229,7 @@ export function rotateSnapshots(snapDir: string, keep = SNAPSHOT_KEEP): number {
       removed++;
     }
   } catch (error) {
-    log.warn("Snapshot rotation failed", error);
+    log.warn("Snapshot rotation failed", undefined, error);
   }
   return removed;
 }

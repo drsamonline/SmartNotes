@@ -252,14 +252,19 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const values: Record<string, unknown> = { openId: user.openId };
   for (const field of ["name", "email", "loginMethod", "role"] as const) {
-    if (user[field] !== undefined) values[field] = user[field];
+    if (user[field] !== undefined) values[field] = await toSqlValue(user[field]);
   }
-  if (user.lastSignedIn !== undefined) values.lastSignedIn = user.lastSignedIn;
+  if (user.lastSignedIn !== undefined) values.lastSignedIn = await toSqlValue(user.lastSignedIn);
   if (values.role === undefined && user.openId === ENV.ownerOpenId) values.role = "admin";
-  if (!values.lastSignedIn) values.lastSignedIn = new Date();
+  if (!values.lastSignedIn) values.lastSignedIn = await toSqlValue(new Date());
 
   try {
-    const existing = await db.select().from(t.users).where(eq(t.users.openId, user.openId)).limit(1);
+    // `id` is auto-increment on both drivers; select only what we need.
+    const existing = await db
+      .select({ id: t.users.id })
+      .from(t.users)
+      .where(eq(t.users.openId, user.openId))
+      .limit(1);
     const found = existing[0] as { id: number } | undefined;
     if (found) {
       const { openId, ...updateSet } = values;

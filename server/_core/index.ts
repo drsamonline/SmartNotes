@@ -14,7 +14,7 @@ import { APP_NAME, HELP_TEXT, getAppVersion, parseArgs } from "./cli";
 import { getDataDir, isPortableMode } from "./paths";
 import { createLogger, requestLoggingMiddleware } from "./logging";
 import { startLocalScheduler } from "./scheduler";
-import { writeSnapshot } from "./backup";
+import { createBackupZip, writeSnapshot } from "./backup";
 
 const log = createLogger("server");
 const cliArgs = parseArgs(process.argv.slice(2));
@@ -30,6 +30,40 @@ if (cliArgs.version) {
 if (cliArgs.dataDir) {
   // Let the paths resolver see it via env as well.
   process.env.SMARTNOTE_DATA_DIR = cliArgs.dataDir;
+}
+
+/** One-shot CLI commands that run before the HTTP server starts. */
+async function runOneShotCommands(): Promise<boolean> {
+  if (cliArgs.backup) {
+    const result = await createBackupZip();
+    console.log(`Backup created: ${result.file} (${Math.round(result.bytes / 1024)} KB)`);
+    return true;
+  }
+  if (cliArgs.setup) {
+    const { runSetupWizard } = await import("./setup");
+    await runSetupWizard();
+    return true;
+  }
+  return false;
+}
+
+/** Open the app in the user's default browser (portable convenience, --open). */
+function openInBrowser(url: string): void {
+  const cmd =
+    process.platform === "win32"
+      ? { file: "cmd", args: ["/c", "start", "", url] }
+      : process.platform === "darwin"
+        ? { file: "open", args: [url] }
+        : { file: "xdg-open", args: [url] };
+  try {
+    // Detached helper process; failures are non-fatal (we always print the URL).
+    const { spawn } = require("node:child_process") as typeof import("node:child_process");
+    const child = spawn(cmd.file, cmd.args, { stdio: "ignore", detached: true });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    /* ignore — printed URL is the fallback */
+  }
 }
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -52,6 +86,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // One-shot commands (--backup / --setup) run and exit without serving HTTP.
+  if (await runOneShotCommands()) {
+    process.exit(0);
+  }
+
   const app = express();
   const server = createServer(app);
   // Correlation IDs + structured request logs (must run before route handlers).
@@ -124,11 +163,13 @@ async function startServer() {
   }
 
   server.listen(port, () => {
+    const url = `http://localhost:${port}/`;
     log.info(`${APP_NAME} v${getAppVersion()} listening`, {
-      url: `http://localhost:${port}/`,
+      url,
       driver: resolveDriver(),
       dataDir: getDataDir(),
     });
+    if (cliArgs.open) openInBrowser(url);
 
     // Portable/offline mode (Stage 1): no platform Heartbeat available →
     // run reminders + nightly snapshots in-process. Both timers are unref'd.

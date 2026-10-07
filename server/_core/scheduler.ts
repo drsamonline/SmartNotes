@@ -19,6 +19,7 @@ const log = createLogger("scheduler");
 export const DEFAULT_TICK_MS = 60_000;
 
 let _timer: NodeJS.Timeout | null = null;
+let _intervalMs: number | null = null;
 let _inFlight = false;
 
 export interface SchedulerOptions {
@@ -32,7 +33,7 @@ export interface SchedulerOptions {
  * when the scheduler was disabled (SMARTNOTE_SCHEDULER=0).
  */
 export function startLocalScheduler(opts: SchedulerOptions = {}): number | null {
-  if (_timer) return _timer.intervalMs ?? null;
+  if (_timer) return _intervalMs;
   if ((process.env.SMARTNOTE_SCHEDULER ?? "1") === "0") {
     log.info("Local scheduler disabled via SMARTNOTE_SCHEDULER=0");
     return null;
@@ -58,6 +59,7 @@ export function startLocalScheduler(opts: SchedulerOptions = {}): number | null 
 
   _timer = setInterval(() => void run(), tick);
   _timer.unref();
+  _intervalMs = tick;
   log.info(`Local reminder scheduler started (every ${Math.round(tick / 1000)}s)`);
   // Process anything that came due while the app was closed, shortly after boot.
   setTimeout(() => void run(), 2_000).unref();
@@ -69,6 +71,7 @@ export function stopLocalScheduler(): void {
   if (_timer) {
     clearInterval(_timer);
     _timer = null;
+    _intervalMs = null;
     log.info("Local reminder scheduler stopped");
   }
 }
