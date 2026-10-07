@@ -154,9 +154,11 @@ class SDKServer {
     return new Map(Object.entries(parsed));
   }
 
-  private getSessionSecret() {
-    const secret = ENV.cookieSecret;
-    return new TextEncoder().encode(secret);
+  private async getSessionSecret(): Promise<Uint8Array> {
+    if (isLocalMode()) {
+      return new TextEncoder().encode(await getLocalSecret());
+    }
+    return new TextEncoder().encode(ENV.cookieSecret);
   }
 
   /**
@@ -185,7 +187,7 @@ class SDKServer {
     const issuedAt = Date.now();
     const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
-    const secretKey = this.getSessionSecret();
+    const secretKey = await this.getSessionSecret();
 
     return new SignJWT({
       openId: payload.openId,
@@ -206,7 +208,7 @@ class SDKServer {
     }
 
     try {
-      const secretKey = this.getSessionSecret();
+      const secretKey = await this.getSessionSecret();
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
@@ -257,6 +259,13 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+    // Portable / offline mode (Stage 1): no OAuth server configured → the app
+    // is a local single-user install. Auto-create & sign in the local user,
+    // issuing a long-lived session cookie so normal browser use just works.
+    if (isLocalMode()) {
+      return this.authenticateLocal(req);
+    }
+
     // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     let sessionCookie = cookies.get(COOKIE_NAME);
@@ -310,6 +319,102 @@ class SDKServer {
 
     return user;
   }
+
+  /**
+   * Local single-user authentication (portable/offline mode).
+   * Ensures the local user row exists, refreshes lastSignedIn, and issues a
+   * session cookie via Set-Cookie so subsequent requests behave like a normal
+   * logged-in browser session.
+   */
+  private async authenticateLocal(req: Request): Promise<AuthenticatedUser> {
+    const now = new Date();
+    let user = await db.getUserByOpenId(LOCAL_OPEN_ID);
+    if (!user) {
+      await db.upsertUser({
+        openId: LOCAL_OPEN_ID,
+        name: LOCAL_USER_NAME,
+        email: null,
+        loginMethod: "local",
+        role: "admin",
+        lastSignedIn: now,
+      });
+      user = await db.getUserByOpenId(LOCAL_OPEN_ID);
+    }
+    if (!user) {
+      throw ForbiddenError("Local user could not be created (storage unavailable)");
+    }
+
+    // Refresh sign-in timestamp without blocking on errors.
+    void db.upsertUser({ openId: LOCAL_OPEN_ID, lastSignedIn: new Date() }).catch(() => {});
+
+    const res = (req as unknown as { res?: { header?: (name: string, value: string) => unknown } }).res;
+    if (res && typeof res.header === "function") {
+      try {
+        const token = await this.createSessionToken(LOCAL_OPEN_ID, {
+          name: LOCAL_USER_NAME,
+          expiresInMs: ONE_YEAR_MS,
+        });
+        const { getSessionCookieOptions } = await import("./cookies");
+        const opts = getSessionCookieOptions(req);
+        // Portable mode is always localhost; "none" would require Secure, so use Lax.
+        const sameSite = opts.secure ? (opts.sameSite ?? "None") : "Lax";
+        const parts = [
+          `${COOKIE_NAME}=${token}`,
+          "Path=/",
+          `Max-Age=${Math.floor(ONE_YEAR_MS / 1000)}`,
+          `SameSite=${sameSite}`,
+          opts.secure ? "Secure" : "",
+        ].filter(Boolean);
+        res.header("Set-Cookie", parts.join("; "));
+      } catch (error) {
+        console.warn("[Auth] Failed to issue local session cookie:", String(error));
+      }
+    }
+
+    return user;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Portable / offline mode (Stage 1 — RFC §Identity)
+// When no OAuth server is configured we run as a local single-user app:
+// a stable per-install openId, auto-created on first use, session cookie
+// signed with a locally generated secret persisted in the data dir.
+// ---------------------------------------------------------------------------
+export const LOCAL_OPEN_ID = "local-user";
+export const LOCAL_USER_NAME = "Local User";
+
+let _localSecret: string | null = null;
+
+/** Load or lazily generate the local JWT secret (persisted under the data dir). */
+async function getLocalSecret(): Promise<string> {
+  if (_localSecret) return _localSecret;
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const crypto = await import("node:crypto");
+  const { getDataDir } = await import("./paths");
+  const file = path.join(getDataDir(), ".session-secret");
+  try {
+    const existing = fs.readFileSync(file, "utf8").trim();
+    if (existing.length >= 32) {
+      _localSecret = existing;
+      return _localSecret;
+    }
+  } catch {
+    /* first run — generate below */
+  }
+  _localSecret = crypto.randomBytes(32).toString("hex");
+  try {
+    fs.writeFileSync(file, _localSecret, { mode: 0o600 });
+  } catch (error) {
+    console.warn("[Auth] Could not persist local session secret:", String(error));
+  }
+  return _localSecret;
+}
+
+/** True when running without an upstream OAuth server (portable/offline mode). */
+export function isLocalMode(): boolean {
+  return !ENV.oAuthServerUrl;
 }
 
 const CRON_OPEN_ID_PREFIX = "cron_";

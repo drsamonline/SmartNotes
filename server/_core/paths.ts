@@ -43,6 +43,14 @@ export function isPackaged(): boolean {
   return process.env.SMARTNOTE_PACKAGED === "1";
 }
 
+/** Portable/offline mode: running from a packaged bundle or on the SQLite driver. */
+export function isPortableMode(): boolean {
+  if (isPackaged()) return true;
+  const explicit = (process.env.DB_DRIVER ?? "").toLowerCase();
+  if (explicit === "sqlite") return true;
+  return !process.env.DATABASE_URL || /^file:/i.test(process.env.DATABASE_URL);
+}
+
 /** Open (and if needed, create+bootstrap) a standalone better-sqlite3 handle for tooling/tests. */
 export async function openSqliteBootstrap(dbFile: string): Promise<{
   client: import("better-sqlite3").Database;
