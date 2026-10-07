@@ -3,10 +3,11 @@
  *
  * The SAME assertion suite runs twice:
  *   1. SQLite  – real better-sqlite3 file in a temp data dir.
- *   2. MySQL   – the production code path with an embedded mysql2/promise mock,
- *                so no external database is needed to prove parity of the
- *                adapter layer (insertId handling, upsert select→insert/update,
- *                date normalisation, cascade-free deletes).
+ *   2. MySQL   – the production code path against a small dialect-aware
+ *                in-memory SQL fake for `mysql2/promise`, so no external
+ *                database is needed to prove parity of the adapter layer
+ *                (insertId handling, upsert select→insert/update, date
+ *                normalisation, reminder cascade deletes).
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -15,37 +16,179 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // MySQL-side fake: intercept only the mysql2/promise import used by drizzle.
+// Drizzle (promise mode) calls `pool.query({ sql, rowsAsArray }, params)` and
+// reads `result[0]` — either the header packet (no field list) or an array of
+// positional row arrays (field list present). The tiny interpreter below
+// implements just enough SQL for the statements this storage layer emits.
 // ---------------------------------------------------------------------------
 const mysqlCaptured: { sql: string[]; values: unknown[][] } = { sql: [], values: [] };
 
-vi.mock("mysql2/promise", async () => {
-  const rowsFor = (sql: string): Record<string, unknown>[] => {
-    if (/from `users`/i.test(sql)) return [{ id: 1, openId: "u-mysql-1" }];
-    if (/from `notes`/i.test(sql)) return [];
-    return [];
-  };
-  const conn = {
-    execute: async (sql: string, values?: unknown[]) => {
-      mysqlCaptured.sql.push(sql);
-      if (values) mysqlCaptured.values.push(values as unknown[]);
-      const rows = rowsFor(sql);
-      const header = /insert into/i.test(sql)
-        ? { insertId: 4242, affectedRows: 1 }
-        : { affectedRows: 1 };
-      return [rows, header] as unknown as [never, never];
-    },
-    query: async (sql: string) => {
-      mysqlCaptured.sql.push(sql);
-      return [rowsFor(sql), []] as unknown as [never, never];
-    },
-    end: async () => {},
-    ping: async () => {},
-  };
+type Row = Record<string, unknown>;
+interface FakeTable {
+  rows: Row[];
+  nextId: number;
+}
+
+/** In-memory tables keyed by lower-cased name. */
+const fakeDb: Record<string, FakeTable> = {};
+
+function table(name: string): FakeTable {
+  const key = name.toLowerCase();
+  return (fakeDb[key] ??= { rows: [], nextId: 1 });
+}
+
+/** Extract backticked column names from a SELECT list. */
+function parseSelectColumns(selectList: string): string[] {
+  return [...selectList.matchAll(/`(\w+)`/g)].map((x) => x[1]);
+}
+
+/** Evaluate `col = ? [AND col <= ? ...]` against a row, consuming params left-to-right. */
+function matchesWhere(whereRaw: string, row: Row, params: unknown[], pi: { i: number }): boolean {
+  const conds = whereRaw.split(/\s+and\s+/i);
+  for (const c of conds) {
+    const cm = /`(\w+)`\s*(<=|>=|=|<|>)\s*\?/i.exec(c);
+    if (!cm) continue; // non-comparable condition (e.g. IS NULL) → treat as pass
+    const [, col, op] = cm;
+    const val = params[pi.i++];
+    const rv = row[col];
+    if (op === "=") {
+      if (String(rv) !== String(val)) return false;
+    } else {
+      const a = rv instanceof Date ? rv.getTime() : Number(Date.parse(String(rv)));
+      const b = val instanceof Date ? val.getTime() : typeof val === "string" ? Date.parse(val) : Number(val);
+      if (op === "<=" && !(a <= b)) return false;
+      if (op === "<" && !(a < b)) return false;
+      if (op === ">=" && !(a >= b)) return false;
+      if (op === ">" && !(a > b)) return false;
+    }
+  }
+  return true;
+}
+
+/** Very small SQL interpreter good enough for what Drizzle emits here. */
+function runFakeSql(sql: string, params: unknown[]): [unknown, unknown] {
+  const s = sql.replace(/\s+/g, " ").trim();
+  mysqlCaptured.sql.push(sql);
+  if (params?.length) mysqlCaptured.values.push([...params]);
+  const pi = { i: 0 };
+
+  // SELECT cols FROM `table` WHERE ... ORDER BY ... LIMIT n
+  let m = /^select\s+(.*?)\s+from\s+`(\w+)`(.*?)$/i.exec(s);
+  if (m) {
+    const [, selectList, name, rest] = m;
+    const t = table(name);
+    const cols = parseSelectColumns(selectList);
+    const whereRaw = /where\s+(.*?)(?:\s+order\b|\s+limit\b|$)/i.exec(rest)?.[1];
+    let rows = [...t.rows];
+    if (whereRaw) {
+      const savedPi = pi.i;
+      rows = rows.filter((r) => {
+        pi.i = savedPi;
+        return matchesWhere(whereRaw, r, params, pi);
+      });
+      // skip WHERE params once filtering is done
+      const condCount = [...whereRaw.matchAll(/`(\w+)`\s*(?:<=|>=|=|<|>)\s*\?/gi)].length;
+      pi.i = savedPi + condCount;
+    }
+    const orderRaw = /order\s+by\s+(.*?)(?:\s+limit\b|$)/i.exec(rest)?.[1];
+    if (orderRaw) {
+      const keys = [...orderRaw.matchAll(/`(?:\w+)`\.`?(\w+)`?\s*(desc)?/gi)].map((x) => ({
+        col: x[1],
+        desc: Boolean(x[2]),
+      }));
+      rows.sort((a, b) => {
+        for (const k of keys) {
+          const av = a[k.col] ?? 0;
+          const bv = b[k.col] ?? 0;
+          const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+          if (cmp !== 0) return k.desc ? -cmp : cmp;
+        }
+        return 0;
+      });
+    }
+    const limit = /limit\s+\?/i.exec(rest);
+    if (limit) rows = rows.slice(0, Number(params[pi.i++] ?? rows.length));
+    else {
+      const lit = /limit\s+(\d+)/i.exec(rest);
+      if (lit) rows = rows.slice(0, Number(lit[1]));
+    }
+    return [rows.map((r) => cols.map((c) => r[c] ?? null)), []];
+  }
+
+  // INSERT INTO `table` (`a`,`b`) VALUES (?,?) [, (?,?)]...
+  m = /^insert\s+into\s+`(\w+)`\s*\(([^)]*)\)\s*values\s+(.*)$/i.exec(s);
+  if (m) {
+    const [, name, colsRaw, tuplesRaw] = m;
+    const t = table(name);
+    const cols = colsRaw.split(",").map((c) => c.trim().replace(/`/g, ""));
+    const tuples = tuplesRaw.match(/\([^)]*\)/g) ?? [];
+    const firstId = t.nextId;
+    for (const _tpl of tuples) {
+      const row: Row = {};
+      cols.forEach((c) => {
+        row[c] = params[pi.i++];
+      });
+      row.id = t.nextId++;
+      t.rows.push(row);
+    }
+
+    return [{ insertId: firstId, affectedRows: tuples.length }, []];
+  }
+
+  // UPDATE `table` SET `a` = ?, `b` = ? WHERE `id` = ?
+  m = /^update\s+`(\w+)`\s+set\s+(.*?)\s+where\s+(.*)$/i.exec(s);
+  if (m) {
+    const [, name, setRaw, whereRaw] = m;
+    const t = table(name);
+    const setCols = [...setRaw.matchAll(/`(\w+)`\s*=\s*\?/gi)].map((x) => x[1]);
+    const setVals = setCols.map(() => params[pi.i++]);
+    const savedPi = pi.i;
+    let affected = 0;
+    for (const r of t.rows) {
+      pi.i = savedPi;
+      if (matchesWhere(whereRaw, r, params, pi)) {
+        setCols.forEach((c, i) => (r[c] = setVals[i]));
+        affected++;
+      }
+    }
+    return [{ affectedRows: affected }, []];
+  }
+
+  // DELETE FROM `table` WHERE ...
+  m = /^delete\s+from\s+`(\w+)`\s*(?:where\s+(.*))?$/i.exec(s);
+  if (m) {
+    const [, name, whereRaw] = m;
+    const t = table(name);
+    if (!whereRaw) {
+      const n = t.rows.length;
+      t.rows = [];
+      return [{ affectedRows: n }, []];
+    }
+    const keep: Row[] = [];
+    for (const r of t.rows) {
+      const probe = { i: 0 };
+      if (!matchesWhere(whereRaw, r, params, probe)) keep.push(r);
+    }
+    const removed = t.rows.length - keep.length;
+    t.rows = keep;
+    return [{ affectedRows: removed }, []];
+  }
+
+  // SHOW / other admin statements → empty success
+  return [[], []];
+}
+
+vi.mock("mysql2/promise", () => {
   const pool = {
-    query: conn.query,
-    execute: conn.execute,
-    getConnection: async () => conn,
+    query: async (sqlOrOpts: unknown, values?: unknown[]) => {
+      const sql =
+        typeof sqlOrOpts === "string" ? sqlOrOpts : (sqlOrOpts as { sql: string }).sql;
+      return runFakeSql(sql, values ?? []);
+    },
+    execute: async (sql: string, values?: unknown[]) => runFakeSql(sql, values ?? []),
+    getConnection: async () => pool,
     end: async () => {},
+    on: () => {},
   };
   return { default: { createPool: async () => pool }, createPool: async () => pool };
 });
@@ -65,6 +208,12 @@ function freshDataDir(): string {
 
 async function loadStorage(driver: "sqlite" | "mysql"): Promise<Storage> {
   vi.resetModules();
+  if (driver === "mysql") {
+    // start each MySQL suite from a clean in-memory dataset + capture log
+    for (const k of Object.keys(fakeDb)) delete fakeDb[k];
+    mysqlCaptured.sql.length = 0;
+    mysqlCaptured.values.length = 0;
+  }
   const dataDir = freshDataDir();
   process.env.SMARTNOTE_DATA_DIR = dataDir;
   if (driver === "mysql") {
@@ -79,6 +228,8 @@ async function loadStorage(driver: "sqlite" | "mysql"): Promise<Storage> {
   const paths = await import("../_core/paths");
   paths.__resetDataDirForTests();
   db.__resetDbForTests();
+  // Force connection creation so getDriver() is resolved.
+  await db.getDb();
   return db;
 }
 
@@ -123,6 +274,7 @@ function defineContract(name: string, setup: () => Promise<{ db: Storage; userId
 
     it("filters notes by category", async () => {
       const tasks = await db.getNotesByCategory(userId, "Tasks");
+      expect(tasks.length).toBeGreaterThan(0);
       expect(tasks.every((n) => n.category === "Tasks")).toBe(true);
     });
 
@@ -220,27 +372,37 @@ describe("dual-driver storage (Stage 0 gate)", () => {
     return { db, userId: user!.id };
   });
 
-  // --- MySQL: production code path against the embedded mock ---------------
+  // --- MySQL: production code path against the embedded SQL fake -----------
   defineContract("mysql", async () => {
     const db = await loadStorage("mysql");
+    // First upsert for an unknown openId must go through the INSERT branch…
     await db.upsertUser({ openId: "u-mysql-1", name: "Test User", loginMethod: "local" } as never);
-    // Mock always reports an existing row → exercises the UPDATE branch…
+    expect(mysqlCaptured.sql.some((s) => /insert into `users`/i.test(s))).toBe(true);
+    // …and a second upsert for the same openId must switch to the UPDATE branch.
+    mysqlCaptured.sql.length = 0;
+    await db.upsertUser({ openId: "u-mysql-1", name: "Renamed" } as never);
     expect(mysqlCaptured.sql.some((s) => /update `users`/i.test(s))).toBe(true);
     mysqlCaptured.sql.length = 0;
     const user = await db.getUserByOpenId("u-mysql-1");
-    return { db, userId: user!.id ?? 1 };
+    expect(user).toBeDefined();
+    return { db, userId: user!.id };
   });
 
-  it("mysql upsertUser inserts when the user does not exist", async () => {
+  it("mysql upsertUser takes exactly one write path per call", async () => {
     const db = await loadStorage("mysql");
     mysqlCaptured.sql.length = 0;
-    // Second call with a brand-new openId still hits the mocked SELECT which
-    // returns a row; assert at minimum that no duplicate INSERT happens blindly.
-    await db.upsertUser({ openId: "u-mysql-1", name: "Renamed" } as never);
-    const hasInsertIntoUsers = mysqlCaptured.sql.some((s) => /insert into `users`/i.test(s));
-    const hasUpdateUsers = mysqlCaptured.sql.some((s) => /update `users`/i.test(s));
-    expect(hasUpdateUsers || hasInsertIntoUsers).toBe(true);
-    expect(hasUpdateUsers && hasInsertIntoUsers).toBe(false); // exactly one path taken
+    await db.upsertUser({ openId: "u-mysql-new", name: "Fresh" } as never);
+    const hasInsert = mysqlCaptured.sql.some((s) => /insert into `users`/i.test(s));
+    const hasUpdate = mysqlCaptured.sql.some((s) => /update `users`/i.test(s));
+    expect(hasInsert).toBe(true);
+    expect(hasUpdate).toBe(false);
+
+    mysqlCaptured.sql.length = 0;
+    await db.upsertUser({ openId: "u-mysql-new", name: "Again" } as never);
+    const hasInsert2 = mysqlCaptured.sql.some((s) => /insert into `users`/i.test(s));
+    const hasUpdate2 = mysqlCaptured.sql.some((s) => /update `users`/i.test(s));
+    expect(hasUpdate2).toBe(true);
+    expect(hasInsert2).toBe(false);
   });
 
   it("unknown DB_DRIVER is rejected", async () => {

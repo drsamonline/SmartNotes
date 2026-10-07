@@ -178,8 +178,8 @@ export async function getDb(): Promise<AnyDb | null> {
   return _db;
 }
 
-export function getDriver(): DbDriver | null {
-  return _driver;
+export function getDriver(): DbDriver {
+  return resolveDriver();
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ function normalizeRow<T extends Record<string, any>>(row: T): T {
 
 async function toSqlValue(v: unknown): Promise<unknown> {
   if (v instanceof Date) return v.toISOString();
-  if (is(Promise, v)) return await v;
+  if (v instanceof Promise) return await v;
   return v;
 }
 
