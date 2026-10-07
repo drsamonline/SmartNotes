@@ -7,7 +7,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
+import { serveStatic } from "./vite";
 import { processPendingReminders } from "../notifications";
 import { sdk } from "./sdk";
 import { getDb, resolveDriver } from "../db";
@@ -150,6 +150,9 @@ async function startServer() {
   );
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
+    // Dev-only: lazy-load the Vite middleware so production bundles don't need
+    // (or load) the `vite` package at all.
+    const { setupVite } = await import("./vite");
     await setupVite(app, server);
   } else {
     serveStatic(app);
