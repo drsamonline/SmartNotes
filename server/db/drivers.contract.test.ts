@@ -42,6 +42,23 @@ function parseSelectColumns(selectList: string): string[] {
   return [...selectList.matchAll(/`(\w+)`/g)].map((x) => x[1]);
 }
 
+/**
+ * Emulate MySQL column DEFAULTs for rows inserted with `DEFAULT` slots, so
+ * reads return realistic values (mirrors drizzle/schema.ts):
+ *   - timestamp columns → Date objects (mysql2 DATETIME mapping)
+ *   - enum/text defaults → their literal default
+ *   - nullable columns without defaults → NULL
+ */
+function fakeColumnDefault(tableName: string, col: string): unknown {
+  if (/^(createdAt|updatedAt|lastSignedIn)$/i.test(col)) return new Date();
+  if (/^(dueDate|scheduledDate|sentAt|completedAt)$/i.test(col)) return null;
+  if (col === "role") return "user";
+  if (col === "priority") return "Medium";
+  if (col === "notificationType") return "both";
+  if (/^(isCompleted|isSent)$/i.test(col)) return 0;
+  return null;
+}
+
 /** Evaluate `col = ? [AND col <= ? ...]` against a row, consuming params left-to-right. */
 function matchesWhere(whereRaw: string, row: Row, params: unknown[], pi: { i: number }): boolean {
   const conds = whereRaw.split(/\s+and\s+/i);
@@ -80,7 +97,6 @@ function runFakeSql(sql: string, params: unknown[]): [unknown, unknown] {
     const cols = parseSelectColumns(selectList);
     const whereRaw = /where\s+(.*?)(?:\s+order\b|\s+limit\b|$)/i.exec(rest)?.[1];
     let rows = [...t.rows];
-    console.error("[FAKE] SELECT on", name, "rows=", JSON.stringify(t.rows), "where=", whereRaw, "params=", JSON.stringify(params));
     if (whereRaw) {
       const savedPi = pi.i;
       rows = rows.filter((r) => {
@@ -116,23 +132,47 @@ function runFakeSql(sql: string, params: unknown[]): [unknown, unknown] {
     return [rows.map((r) => cols.map((c) => r[c] ?? null)), []];
   }
 
-  // INSERT INTO `table` (`a`,`b`) VALUES (?,?) [, (?,?)]...
+  // INSERT INTO `table` (`a`,`b`) VALUES (?, DEFAULT, ?) [, (?, ?, ?)]...
+  // Parameters are positional per VALUE tuple: a literal `DEFAULT` keyword
+  // occupies its column slot but consumes NO parameter. Skipping by counting
+  // placeholders alone would shift every later value into the wrong column.
   m = /^insert\s+into\s+`(\w+)`\s*\(([^)]*)\)\s*values\s+(.*)$/i.exec(s);
   if (m) {
     const [, name, colsRaw, tuplesRaw] = m;
     const t = table(name);
     const cols = colsRaw.split(",").map((c) => c.trim().replace(/`/g, ""));
-    const tuples = (tuplesRaw.replace(/\(\s*default\s*(,|$)/gi, "($1").match(/\([^)]*\)/g) ?? []);
+    const tuples = tuplesRaw.match(/\([^)]*\)/g) ?? [];
     const firstId = t.nextId;
-    for (const _tpl of tuples) {
+    for (const tpl of tuples) {
       const row: Row = {};
-      const phCount = (_tpl.match(/\?/g) ?? []).length;
-      let assigned = 0;
-      cols.forEach((c) => {
-        if (assigned >= phCount) return; // trailing `default` columns → no param
-        assigned++;
-        row[c] = params[pi.i++];
-      });
+      // Split the tuple into value slots, respecting quoted strings that
+      // contain commas (e.g. strftime defaults). `?` consumes a param;
+      // anything else (literal / DEFAULT) consumes none.
+      const slots: string[] = [];
+      let cur = "";
+      let inStr = false;
+      for (let i = 1; i < tpl.length - 1; i++) {
+        const ch = tpl[i];
+        if (ch === "'" ) inStr = !inStr;
+        if (ch === "," && !inStr) {
+          slots.push(cur.trim());
+          cur = "";
+        } else cur += ch;
+      }
+      slots.push(cur.trim());
+      let si = 0;
+      for (const c of cols) {
+        const slot = slots[si++] ?? "";
+        if (slot === "?") row[c] = params[pi.i++];
+        // non-`?` slot (e.g. DEFAULT) → leave column unset, consume nothing
+      }
+      // Emulate MySQL semantics for columns left to their DEFAULT: fill from
+      // the schema so reads return realistic rows (createdAt/updatedAt are
+      // DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP — mysql2 always returns a
+      // Date object for them, never NULL).
+      for (const c of cols) {
+        if (row[c] === undefined) row[c] = fakeColumnDefault(name, c);
+      }
       row.id = t.nextId++;
       t.rows.push(row);
     }
