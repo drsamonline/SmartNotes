@@ -25,7 +25,6 @@ dates/times ("tomorrow at 3pm") so nothing slips through the cracks.
 
 <div align="center">
 
-# 🗒️ SmartNote Scheduler
 
 **AI-powered notes · reminders · brutalist design**
 
