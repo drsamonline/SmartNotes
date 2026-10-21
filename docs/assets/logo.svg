@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="SmartNote Scheduler">
+  <rect x="6" y="10" width="44" height="52" rx="5" fill="#fffdf8" stroke="#d9cfb8" stroke-width="2"/>
+  <line x1="15" y1="24" x2="41" y2="24" stroke="#c9bda1" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="15" y1="33" x2="41" y2="33" stroke="#c9bda1" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="15" y1="42" x2="34" y2="42" stroke="#c9bda1" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="50" cy="54" r="13" fill="#d97706"/>
+  <path d="M44 54.3l3.6 3.6 6.8-7.4" fill="none" stroke="#faf7f0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="38" font-family="Georgia, 'Times New Roman', serif" font-size="27" fill="#1f1b16">SmartNote</text>
+  <text x="78" y="58" font-family="Helvetica, Arial, sans-serif" font-size="12.5" letter-spacing="2.6" fill="#8a7d63">SCHEDULER</text>
+</svg>

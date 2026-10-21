@@ -2,6 +2,31 @@
 
 # 🗒️ SmartNote Scheduler
 
+**AI-powered notes · reminders · scheduling — write in plain English and it files itself.**
+
+[![Landing page](https://img.shields.io/badge/%F0%9F%8C%90_Landing_page-drsamonline.github.io%2FSmartNotes-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/)
+[![Demo](https://img.shields.io/badge/%E2%96%B6_Demo_%26_screens-illustrative_walkthrough-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/#demo)
+[![License: MIT](https://img.shields.io/badge/License-MIT-d97706?style=flat-square)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-d97706?style=flat-square)](./CHANGELOG.md)
+[![React 19](https://img.shields.io/badge/React-19-d97706?style=flat-square&logo=react&logoColor=white)](https://react.dev)
+[![tRPC 11](https://img.shields.io/badge/tRPC-11-d97706?style=flat-square)](https://trpc.io)
+[![Stars](https://img.shields.io/github/stars/drsamonline/SmartNotes?style=flat-square&color=d97706&label=stars)](https://github.com/drsamonline/SmartNotes/stargazers)
+
+An AI-powered note capture, categorisation and reminder scheduling app with a
+brutalist UI. Write notes in plain natural language — SmartNote uses an LLM to
+automatically classify them, detect priority, generate a title, and extract
+dates/times ("tomorrow at 3pm") so nothing slips through the cracks.
+
+**🌐 [Landing page](https://drsamonline.github.io/SmartNotes/)** &nbsp;·&nbsp; **▶ [Demo & screens](https://drsamonline.github.io/SmartNotes/#demo)** &nbsp;·&nbsp; **[Source](https://github.com/drsamonline/SmartNotes)**
+
+</div>
+
+---
+
+<div align="center">
+
+# 🗒️ SmartNote Scheduler
+
 **AI-powered notes · reminders · brutalist design**
 
 `v1.0.0` · MIT License · React 19 · tRPC 11 · Drizzle ORM

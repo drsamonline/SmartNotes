@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found — SmartNote Scheduler</title>
+<meta name="description" content="That page isn't here. Return to the SmartNote Scheduler landing page.">
+<meta name="robots" content="noindex, follow">
+<link rel="canonical" href="https://drsamonline.github.io/SmartNotes/">
+<meta name="theme-color" content="#faf7f0">
+<link rel="icon" type="image/svg+xml" href="/SmartNotes/assets/favicon.svg">
+<style>
+  :root{
+    --paper:#faf7f0;--paper-2:#fffdf8;--ink:#1f1b16;--ink-soft:#4a4237;--ink-mute:#8a7d63;
+    --rule:#e6ddc9;--rule-strong:#d9cfb8;--amber:#d97706;--amber-deep:#b45309;--amber-wash:#fbeed7;
+    --serif:Georgia,'Iowan Old Style','Palatino Linotype','Times New Roman',serif;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;display:grid;place-items:center;padding:32px;
+    background-color:var(--paper);background-image:var(--grain);color:var(--ink);
+    font-family:var(--sans);line-height:1.65;
+  }
+  .card{
+    width:100%;max-width:560px;background:var(--paper-2);border:1px solid var(--rule-strong);
+    border-radius:16px;padding:44px 40px;text-align:center;
+    box-shadow:0 2px 0 rgba(31,27,22,.05), 0 26px 46px -28px rgba(31,27,22,.5);
+    position:relative;overflow:hidden;
+  }
+  .card::after{
+    content:"";position:absolute;inset:0;
+    background:repeating-linear-gradient(to bottom, transparent 0 35px, var(--rule) 35px 36px);
+    opacity:.4;pointer-events:none;
+  }
+  .card > *{position:relative;z-index:1}
+  .mark{width:58px;height:58px;margin:0 auto 18px;border-radius:15px;background:var(--amber-wash);
+    border:1px solid #f0dcb6;display:grid;place-items:center;color:var(--amber-deep)}
+  h1{font-family:var(--serif);font-size:clamp(30px,6vw,44px);margin:0 0 10px}
+  p{color:var(--ink-soft);margin:0 auto 24px;max-width:34em}
+  .btn{display:inline-flex;align-items:center;gap:9px;background:var(--amber);color:#fff;
+    font-weight:600;padding:13px 22px;border-radius:11px;text-decoration:none;
+    box-shadow:0 12px 22px -14px rgba(217,119,6,.9);transition:background .2s ease}
+  .btn:hover{background:var(--amber-deep)}
+  .links{margin-top:20px;font-size:14px;color:var(--ink-mute)}
+  .links a{color:var(--amber-deep);text-decoration:none}
+  .links a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="mark" aria-hidden="true">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+    </div>
+    <h1>This page slipped through</h1>
+    <p>The page you were looking for isn't here. It may have moved, or the link may have a typo. The landing page has everything else.</p>
+    <a class="btn" href="/SmartNotes/">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+      Back to SmartNote Scheduler
+    </a>
+    <p class="links">Or browse the <a href="https://github.com/drsamonline/SmartNotes">source on GitHub</a>.</p>
+  </main>
+</body>
+</html>

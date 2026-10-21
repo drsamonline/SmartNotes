@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SmartNote Scheduler">
+  <rect width="64" height="64" rx="14" fill="#faf7f0"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#e6ddc9" stroke-width="1.5"/>
+  <rect x="14" y="10" width="36" height="44" rx="3" fill="#fffdf8" stroke="#d9cfb8" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="44" y2="20" stroke="#c9bda1" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="20" y1="27" x2="44" y2="27" stroke="#c9bda1" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="20" y1="34" x2="38" y2="34" stroke="#c9bda1" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="20" y1="41" x2="41" y2="41" stroke="#c9bda1" stroke-width="1.6" stroke-linecap="round"/>
+  <circle cx="47" cy="46" r="11" fill="#d97706"/>
+  <path d="M42 46.2l3.2 3.2 6-6.6" fill="none" stroke="#faf7f0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
