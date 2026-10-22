@@ -24,26 +24,6 @@ dates/times ("tomorrow at 3pm") so nothing slips through the cracks.
 
 ---
 
-<div align="center">
-
-
-**AI-powered notes · reminders · brutalist design**
-
-`v1.0.0` · MIT License · React 19 · tRPC 11 · Drizzle ORM
-
-*Capture in plain English — SmartNote classifies, prioritizes and schedules for you.*
-
-[Features](#-features) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Roadmap](./docs/IMPLEMENTATION_PLAN.md)
-
-</div>
-
----
-
-An AI-powered note capture, categorization, and reminder scheduling app with a
-brutalist UI. Write notes in plain natural language — SmartNote uses an LLM to
-automatically classify them, detect priority, generate a title, and extract
-dates/times ("tomorrow at 3pm") so nothing slips through the cracks.
-
 - **License:** MIT — see [LICENSE](./LICENSE)
 - **Version:** 1.0.0
 - **Portable apps (planned):** Windows `.exe` + Linux portable builds —
