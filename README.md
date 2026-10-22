@@ -5,6 +5,7 @@
 **AI-powered notes · reminders · scheduling — write in plain English and it files itself.**
 
 [![Landing page](https://img.shields.io/badge/%F0%9F%8C%90_Landing_page-drsamonline.github.io%2FSmartNotes-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/)
+[![All projects](https://img.shields.io/badge/All%20projects-hub-d97706?style=flat-square)](https://drsamonline.github.io/)
 [![Demo](https://img.shields.io/badge/%E2%96%B6_Demo_%26_screens-illustrative_walkthrough-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-d97706?style=flat-square)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0-d97706?style=flat-square)](./CHANGELOG.md)
