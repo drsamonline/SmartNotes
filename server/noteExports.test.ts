@@ -20,6 +20,14 @@ describe("note exports", () => {
     expect(csv).toContain('"Ship it with a checklist"');
   });
 
+  it("neutralises spreadsheet formula injection in CSV values", () => {
+    const csv = notesToCsv([{ ...notes[0], title: "=SUM(A1:A9)", content: "@cmd|'/C calc'!A1" }]);
+    expect(csv).toContain("\"'=SUM(A1:A9)\"");
+    expect(csv).toContain("\"'@cmd|'/C calc'!A1\"");
+    // A harmless value is left untouched.
+    expect(notesToCsv(notes)).toContain('"Project, launch"');
+  });
+
   it("creates readable Markdown note sections", () => {
     const markdown = notesToMarkdown(notes, new Date("2026-10-05T00:00:00.000Z"));
     expect(markdown).toContain("# SmartNote Scheduler Export");
