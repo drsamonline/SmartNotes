@@ -36,7 +36,12 @@ function formatDate(value?: Date | string | null) {
 }
 
 function escapeCsv(value: string) {
-  return `"${value.replaceAll('"', '""').replaceAll("\r", " ").replaceAll("\n", " ")}"`;
+  // Neutralise spreadsheet formula injection: a cell that begins with =, +, -
+  // or @ (or a leading tab / carriage return) is treated as a formula by Excel
+  // and Google Sheets. Prefix it with a single quote so the payload is stored
+  // and displayed as inert text instead of being executed on open.
+  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${guarded.replaceAll('"', '""').replaceAll("\r", " ").replaceAll("\n", " ")}"`;
 }
 
 export function notesToCsv(notes: ExportableNote[]) {
