@@ -172,6 +172,6 @@ create.mutate({ content: "Submit report tomorrow at 3pm" });
 
 **Related:** [Architecture](./ARCHITECTURE.md) · [Database](./DATABASE.md) · [Enhancements](./ENHANCEMENTS.md)
 
-*© 2026 SmartNote Scheduler contributors · MIT License*
+*© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0*
 
 </div>
