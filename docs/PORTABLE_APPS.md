@@ -225,6 +225,6 @@ Before implementation starts, we need these four calls:
 *Effort estimates for all of the above are staged in
 [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) (Stages 0–5).*
 
-**© 2026 SmartNote Scheduler contributors · MIT License**
+**© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0**
 
 </div>
