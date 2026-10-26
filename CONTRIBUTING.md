@@ -113,7 +113,7 @@ secrets). For notification problems, include the affected note ID and the
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
-project's [MIT License](./LICENSE).
+project's [PolyForm Noncommercial License 1.0.0](./LICENSE).
 
 ---
 
@@ -121,6 +121,6 @@ project's [MIT License](./LICENSE).
 
 **Related:** [Architecture](./docs/ARCHITECTURE.md) · [Enhancement Backlog](./docs/ENHANCEMENTS.md) · [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md)
 
-*© 2026 SmartNote Scheduler contributors · MIT License*
+*© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0*
 
 </div>
