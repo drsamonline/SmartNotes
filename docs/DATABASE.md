@@ -135,6 +135,6 @@ declared in `drizzle/relations.ts`.
 
 **Related:** [Architecture](./ARCHITECTURE.md) · [API](./API.md) · [Portable Apps RFC (SQLite adapter)](./PORTABLE_APPS.md)
 
-*© 2026 SmartNote Scheduler contributors · MIT License*
+*© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0*
 
 </div>
