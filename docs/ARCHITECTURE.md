@@ -142,6 +142,6 @@ push, email webhook, DB) are mocked at module boundaries so tests run hermetical
 
 **Related:** [API](./API.md) · [Database](./DATABASE.md) · [Portable Apps RFC](./PORTABLE_APPS.md) · [Enhancements](./ENHANCEMENTS.md) · [Plan](./IMPLEMENTATION_PLAN.md)
 
-*© 2026 SmartNote Scheduler contributors · MIT License*
+*© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0*
 
 </div>
