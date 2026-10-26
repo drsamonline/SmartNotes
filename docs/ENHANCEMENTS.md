@@ -143,6 +143,6 @@ Each enhancement lists its **cost** (effort) and **impact** so you can prune fre
 
 *Next: see [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) for the staged delivery plan.*
 
-**© 2026 SmartNote Scheduler contributors · MIT License**
+**© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0**
 
 </div>
