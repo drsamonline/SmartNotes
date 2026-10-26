@@ -167,6 +167,6 @@ graph LR
 **⏸ Awaiting your decision: which stages to start with?**
 Suggested minimum viable order: **Stage 0 → 1 → 2** (portable `.exe` + Linux first).
 
-**© 2026 SmartNote Scheduler contributors · MIT License**
+**© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0**
 
 </div>
