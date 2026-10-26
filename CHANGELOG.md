@@ -114,6 +114,6 @@ and reminder scheduling app with a brutalist design system.
 
 <div align="center">
 
-*© 2026 SmartNote Scheduler contributors · MIT License*
+*© 2026 SmartNote Scheduler contributors · PolyForm Noncommercial License 1.0.0*
 
 </div>
