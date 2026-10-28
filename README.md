@@ -7,7 +7,7 @@
 [![Landing page](https://img.shields.io/badge/%F0%9F%8C%90_Landing_page-drsamonline.github.io%2FSmartNotes-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/)
 [![All projects](https://img.shields.io/badge/All%20projects-hub-d97706?style=flat-square)](https://drsamonline.github.io/)
 [![Demo](https://img.shields.io/badge/%E2%96%B6_Demo_%26_screens-illustrative_walkthrough-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/#demo)
-[![License: MIT](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-d97706?style=flat-square)](./LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-d97706?style=flat-square)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0-d97706?style=flat-square)](./CHANGELOG.md)
 [![React 19](https://img.shields.io/badge/React-19-d97706?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![tRPC 11](https://img.shields.io/badge/tRPC-11-d97706?style=flat-square)](https://trpc.io)
