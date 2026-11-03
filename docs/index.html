@@ -369,6 +369,15 @@
     .btn:hover,.card:hover{transform:none}
     *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
   }
+
+  /* ---------- light theme ----------
+     Added so the page reads on paper. It overrides the page's own variables and
+     nothing else — no markup, no layout, no type. */
+  :root, html {
+    color-scheme: light;
+    --paper: #f7f6f2;
+    --ink: #14161a;
+  }
 </style>
 </head>
 <body>
