@@ -1,3 +1,17 @@
+## Unreleased
+
+- **A damaged backup file imports the notes it can, and says what it could not.**
+  The browser importer validated the file with a hand-written filter that was weaker than the
+  server's zod schema, so one note with a title over 255 characters, an empty body, or a
+  date-only `dueDate` made the server reject the **whole batch** — and the page showed nothing.
+  The shape now lives once, in `shared/noteBackup.ts`, and both the router and the importer use
+  it: long titles are cut to the column width, `2026-10-10` is rewritten as the ISO datetime the
+  server demands, unreadable dates become `null`, and anything genuinely unimportable is counted
+  and named in the message instead of disappearing. A file over the 500-note limit now imports
+  500 and says how many were left out, rather than being refused outright. `server/noteBackup.test.ts`
+  (9 tests) asserts that every note the importer returns is a note the router accepts, and fails
+  if the schema is ever declared twice again.
+
 ## 1.0.1 — 2026-10-25
 
 - **Licence: PolyForm Noncommercial 1.0.0.** Every repository now carries the canonical text

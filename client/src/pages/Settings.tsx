@@ -7,6 +7,7 @@ import { filterTemplates, loadCustomTemplates, reorderTemplates, saveCustomTempl
 import { trpc } from "@/lib/trpc";
 import { useTheme } from "@/contexts/ThemeContext";
 import { filterNotes, notesToCsv, notesToMarkdown } from "@/lib/noteExports";
+import { BACKUP_MAX_NOTES, parseBackupNotes } from "@shared/noteBackup";
 
 const shortcuts = [
   ["N", "Focus the new-note composer"],
@@ -202,22 +203,17 @@ export default function Settings() {
         });
         saveCustomTemplates(validTemplates);
       }
-      const importedNotes = Array.isArray(payload.notes) ? payload.notes.filter((note): note is Record<string, unknown> => {
-        if (!note || typeof note !== "object") return false;
-        const item = note as Record<string, unknown>;
-        return typeof item.title === "string" && typeof item.content === "string" && categories.includes(item.category as typeof categories[number]) && ["Low", "Medium", "High"].includes(String(item.priority));
-      }).map((note) => ({
-        title: String(note.title),
-        content: String(note.content),
-        category: note.category as NoteTemplate["category"],
-        priority: note.priority as "Low" | "Medium" | "High",
-        isCompleted: Number(note.isCompleted) || 0,
-        dueDate: typeof note.dueDate === "string" ? note.dueDate : null,
-        scheduledDate: typeof note.scheduledDate === "string" ? note.scheduledDate : null,
-      })) : [];
-      if (importedNotes.length) importBackup.mutate({ notes: importedNotes });
-      else {
-        setBackupMessage("Settings and templates imported. Reload to apply them.");
+      // One contract for both sides: anything this accepts, `importBackup` accepts.
+      const { notes: importedNotes, skipped, truncated } = parseBackupNotes(payload.notes);
+      const report = [
+        skipped.length ? `${skipped.length} entr${skipped.length === 1 ? "y" : "ies"} could not be read (${skipped[0].reason})` : "",
+        truncated ? `${truncated} notes left out (limit is ${BACKUP_MAX_NOTES} per import)` : "",
+      ].filter(Boolean).join("; ");
+      if (importedNotes.length) {
+        if (report) setBackupMessage(`Importing ${importedNotes.length} notes — ${report}.`);
+        importBackup.mutate({ notes: importedNotes });
+      } else {
+        setBackupMessage(report ? `Nothing to import: ${report}.` : "Settings and templates imported. Reload to apply them.");
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch {

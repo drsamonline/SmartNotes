@@ -13,6 +13,7 @@ import {
   deleteRemindersForNote,
 } from "./db/index";
 import { analyzeNoteContent, combineDateAndTime } from "./ai";
+import { BACKUP_MAX_NOTES, backupNoteSchema } from "@shared/noteBackup";
 
 export const notesRouter = router({
   /**
@@ -79,16 +80,10 @@ export const notesRouter = router({
     }),
 
   importBackup: protectedProcedure
+    // The shape lives in `shared/noteBackup.ts` so the browser importer cannot
+    // disagree with this schema — a disagreement used to reject whole batches.
     .input(z.object({
-      notes: z.array(z.object({
-        title: z.string().min(1).max(255),
-        content: z.string().min(1),
-        category: z.enum(["Tasks", "Deadlines", "Schedule", "Thoughts", "Learning"]),
-        priority: z.enum(["Low", "Medium", "High"]),
-        isCompleted: z.number().optional(),
-        dueDate: z.string().datetime().nullable().optional(),
-        scheduledDate: z.string().datetime().nullable().optional(),
-      })).max(500),
+      notes: z.array(backupNoteSchema).max(BACKUP_MAX_NOTES),
     }))
     .mutation(async ({ input, ctx }) => {
       for (const note of input.notes) {
