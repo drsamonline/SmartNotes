@@ -2,6 +2,8 @@
 
 # 🗒️ SmartNote Scheduler
 
+
+![Screenshot](docs/shot.png)
 **AI-powered notes · reminders · scheduling — write in plain English and it files itself.**
 
 [![Landing page](https://img.shields.io/badge/%F0%9F%8C%90_Landing_page-drsamonline.github.io%2FSmartNotes-d97706?style=flat-square)](https://drsamonline.github.io/SmartNotes/)
