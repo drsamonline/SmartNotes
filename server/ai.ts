@@ -91,9 +91,13 @@ export function extractDateTimeFromText(text: string): { date?: Date; time?: str
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date(now);
+  nextWeek.setDate(nextWeek.getDate() + 7);
 
-  // Simple date patterns
+  // Simple date patterns. Order matters: the longer, more specific phrase is
+  // tested first ("next week" before "week", "next monday" before "monday").
   const patterns = [
+    { regex: /next\s+week/i, date: nextWeek },
     { regex: /tomorrow/i, date: tomorrow },
     { regex: /today/i, date: now },
     { regex: /next\s+monday/i, date: getNextDayOfWeek("Monday") },
@@ -120,21 +124,40 @@ export function extractDateTimeFromText(text: string): { date?: Date; time?: str
     }
   }
 
-  // Extract time patterns (HH:MM or am/pm)
-  let extractedTime: string | undefined;
-  const timeMatch = text.match(/(\d{1,2}):(\d{2})|at\s+(\d{1,2})\s*(am|pm)/i);
-  if (timeMatch) {
-    if (timeMatch[1]) {
-      extractedTime = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
-    } else if (timeMatch[3]) {
-      const hour = parseInt(timeMatch[3]);
-      const isPm = timeMatch[4]?.toLowerCase() === "pm";
-      const adjustedHour = isPm && hour !== 12 ? hour + 12 : hour === 12 && !isPm ? 0 : hour;
-      extractedTime = `${String(adjustedHour).padStart(2, "0")}:00`;
-    }
+  return { date: extractedDate, time: extractTimeFromText(text) };
+}
+
+/**
+ * Extract a clock time from natural language text.
+ *
+ * Two shapes are recognised: a 24-hour "HH:MM" and a 12-hour "9am" / "3 pm".
+ * The "at" is optional - "standup 9am" carries a time just as "at 9am" does.
+ *
+ * An IMPOSSIBLE time is refused rather than coerced: "25:99" and "at 13pm" are
+ * not times, and the old code passed "25:99" straight to setHours(), which
+ * silently rolled the note into the following day - a reminder at a time the
+ * user never wrote. Refusing leaves the time undefined, so the note keeps its
+ * date and gets no invented clock time.
+ */
+export function extractTimeFromText(text: string): string | undefined {
+  const hhmm = text.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (hhmm) {
+    const hours = Number(hhmm[1]);
+    const minutes = Number(hhmm[2]);
+    if (hours > 23 || minutes > 59) return undefined;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
   }
 
-  return { date: extractedDate, time: extractedTime };
+  const ampm = text.match(/\b(\d{1,2})\s*(am|pm)\b/i);
+  if (ampm) {
+    const hour12 = Number(ampm[1]);
+    if (hour12 < 1 || hour12 > 12) return undefined;
+    const isPm = ampm[2].toLowerCase() === "pm";
+    const hours = isPm ? (hour12 === 12 ? 12 : hour12 + 12) : hour12 === 12 ? 0 : hour12;
+    return `${String(hours).padStart(2, "0")}:00`;
+  }
+
+  return undefined;
 }
 
 /**

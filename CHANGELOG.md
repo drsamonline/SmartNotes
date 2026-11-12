@@ -1,5 +1,18 @@
 ## Unreleased
 
+- **A note's time is read from what was written, and an impossible time is refused.**
+  The deterministic extractor (the fallback used when the model returns nothing usable) had
+  three gaps. It passed an impossible clock time straight through: `call tomorrow at 25:99`
+  produced `"25:99"`, and `combineDateAndTime` then slid the reminder from Thursday 12th to
+  **Friday 13th, 02:39** — a day and a half from the note, with no warning. It also advertised
+  `"next week"` in its own prompt and never parsed it, and it only saw a 12-hour time when the
+  word `at` came first, so `standup 9am` carried no time at all. The clock reading now lives in
+  `extractTimeFromText`: `HH:MM` and `9am` / `3 pm` are both read, `12pm` is noon and `12am` is
+  midnight, and a time that cannot exist (`25:99`, `13pm`, `0am`) is refused — the note keeps
+  its date and gets no invented time rather than a silently rolled-over one. `server/ai.test.ts`
+  covers each case (27 tests, up from 19), and removing any one of the three fixes turns the
+  suite red.
+
 - **A damaged backup file imports the notes it can, and says what it could not.**
   The browser importer validated the file with a hand-written filter that was weaker than the
   server's zod schema, so one note with a title over 255 characters, an empty body, or a

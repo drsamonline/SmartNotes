@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractDateTimeFromText, combineDateAndTime } from "./ai";
+import { extractDateTimeFromText, extractTimeFromText, combineDateAndTime } from "./ai";
 
 describe("AI Service - Date/Time Extraction", () => {
   describe("extractDateTimeFromText", () => {
@@ -69,6 +69,53 @@ describe("AI Service - Date/Time Extraction", () => {
       const result = combineDateAndTime(date, undefined);
       expect(result?.getHours()).toBe(0);
       expect(result?.getMinutes()).toBe(0);
+    });
+  });
+
+  describe("relative phrases and clock times the note writer actually uses", () => {
+    it("should extract 'next week' as a date one week out", () => {
+      const result = extractDateTimeFromText("Draft the report next week");
+      expect(result.date).toBeDefined();
+      const expected = new Date();
+      expected.setDate(expected.getDate() + 7);
+      expect(result.date?.toDateString()).toBe(expected.toDateString());
+    });
+
+    it("should prefer 'next week' over a bare weekday in the same note", () => {
+      const result = extractDateTimeFromText("Ship next week on Friday");
+      const expected = new Date();
+      expected.setDate(expected.getDate() + 7);
+      expect(result.date?.toDateString()).toBe(expected.toDateString());
+    });
+
+    it("should extract a 12-hour time with no 'at'", () => {
+      expect(extractDateTimeFromText("standup 9am").time).toBe("09:00");
+      expect(extractDateTimeFromText("call mum 7 pm").time).toBe("19:00");
+    });
+
+    it("should read noon and midnight the right way round", () => {
+      expect(extractTimeFromText("lunch at 12pm")).toBe("12:00");
+      expect(extractTimeFromText("last dose at 12am")).toBe("00:00");
+    });
+
+    it("should keep the leading zero on a single-digit 24-hour time", () => {
+      expect(extractTimeFromText("dose at 09:05")).toBe("09:05");
+    });
+
+    it("should refuse an impossible 24-hour time instead of rolling into the next day", () => {
+      // setHours(25, 99) used to slide the reminder a day forward without a word
+      expect(extractTimeFromText("call at 25:99")).toBeUndefined();
+      expect(extractDateTimeFromText("call tomorrow at 24:10").time).toBeUndefined();
+      expect(extractDateTimeFromText("call tomorrow at 24:10").date).toBeDefined();
+    });
+
+    it("should refuse a 12-hour clock that cannot exist", () => {
+      expect(extractTimeFromText("meeting at 13pm")).toBeUndefined();
+      expect(extractTimeFromText("meeting at 0am")).toBeUndefined();
+    });
+
+    it("should not invent a time from a note that has none", () => {
+      expect(extractTimeFromText("buy milk")).toBeUndefined();
     });
   });
 
