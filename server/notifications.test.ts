@@ -3,7 +3,8 @@ import { ENV } from "./_core/env";
 
 const mocks = vi.hoisted(() => ({
   getPendingReminders: vi.fn(),
-  markReminderAsSent: vi.fn(),
+  claimReminder: vi.fn(),
+  releaseReminderClaim: vi.fn(),
   getNoteById: vi.fn(),
   getUserById: vi.fn(),
   createNotificationLog: vi.fn(),
@@ -12,7 +13,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./db/index", () => ({
   getPendingReminders: mocks.getPendingReminders,
-  markReminderAsSent: mocks.markReminderAsSent,
+  claimReminder: mocks.claimReminder,
+  releaseReminderClaim: mocks.releaseReminderClaim,
   getNoteById: mocks.getNoteById,
   getUserById: mocks.getUserById,
   createNotificationLog: mocks.createNotificationLog,
@@ -49,10 +51,11 @@ describe("processPendingReminders", () => {
     mocks.getUserById.mockResolvedValue({ email: null });
     mocks.createNotificationLog.mockResolvedValue(undefined);
     mocks.notifyOwner.mockResolvedValue(true);
-    mocks.markReminderAsSent.mockResolvedValue(undefined);
+    mocks.claimReminder.mockResolvedValue(true);
+    mocks.releaseReminderClaim.mockResolvedValue(undefined);
   });
 
-  it("sends due reminders and marks them sent after delivery succeeds", async () => {
+  it("sends due reminders and claims them before delivery", async () => {
     await processPendingReminders();
 
     expect(mocks.getPendingReminders).toHaveBeenCalledWith(expect.any(Date));
@@ -60,7 +63,10 @@ describe("processPendingReminders", () => {
       title: "Reminder: Submit report",
       content: expect.stringContaining("Deadlines due at"),
     });
-    expect(mocks.markReminderAsSent).toHaveBeenCalledWith(reminder.id);
+    // The claim IS the mark-as-sent: one conditional UPDATE, so a second run
+    // that read the same pending row cannot deliver it again.
+    expect(mocks.claimReminder).toHaveBeenCalledWith(reminder.id);
+    expect(mocks.releaseReminderClaim).not.toHaveBeenCalled();
     expect(mocks.createNotificationLog).toHaveBeenCalled();
   });
 
@@ -69,7 +75,43 @@ describe("processPendingReminders", () => {
 
     await processPendingReminders();
 
-    expect(mocks.markReminderAsSent).not.toHaveBeenCalled();
+    // Nothing was delivered, so the claim is released and the next heartbeat
+    // retries it — a failed reminder must never be silently consumed.
+    expect(mocks.releaseReminderClaim).toHaveBeenCalledWith(reminder.id);
+  });
+
+  it("delivers a reminder exactly once when two heartbeat runs overlap", async () => {
+    // Both runs read the same pending row — which is what the real query does,
+    // because neither has written anything yet when the second one selects.
+    mocks.getPendingReminders.mockResolvedValue([reminder]);
+    let claimed = false;
+    mocks.claimReminder.mockImplementation(async () => {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    });
+
+    await Promise.all([processPendingReminders(), processPendingReminders()]);
+
+    expect(mocks.notifyOwner).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a reminder another run has already claimed", async () => {
+    mocks.claimReminder.mockResolvedValue(false);
+
+    await processPendingReminders();
+
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+    expect(mocks.createNotificationLog).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when the note no longer exists", async () => {
+    mocks.getNoteById.mockResolvedValue(null);
+
+    await processPendingReminders();
+
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+    expect(mocks.releaseReminderClaim).toHaveBeenCalledWith(reminder.id);
   });
 
   it("delivers an email reminder when an email webhook is configured", async () => {
@@ -89,7 +131,7 @@ describe("processPendingReminders", () => {
         body: expect.stringContaining('"to":"user@example.com"'),
       }),
     );
-    expect(mocks.markReminderAsSent).toHaveBeenCalledWith(emailReminder.id);
+    expect(mocks.claimReminder).toHaveBeenCalledWith(emailReminder.id);
   });
 });
 

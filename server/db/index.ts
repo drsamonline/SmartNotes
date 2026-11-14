@@ -444,12 +444,45 @@ export async function getPendingReminders(now = new Date()): Promise<Reminder[]>
   return (rows as unknown[]).map((r) => normalizeRow(r as Reminder));
 }
 
-/** Mark reminder as sent */
-export async function markReminderAsSent(reminderId: number): Promise<void> {
+/**
+ * Claim a reminder for delivery: `isSent` flips 0 → 1 in ONE conditional
+ * statement, and the caller is told whether this call is the one that won.
+ *
+ * This is the idempotency gate for the reminder processor. The heartbeat
+ * endpoint is a durable callback, so two runs can overlap: both select the same
+ * pending row before either writes anything, and a read-then-write pair would
+ * deliver the reminder twice. Because the claim is a single
+ * `UPDATE … WHERE id = ? AND isSent = 0`, exactly one of them changes a row.
+ *
+ * A claimed reminder that fails to deliver is handed back with
+ * `releaseReminderClaim`, so it stays pending for the next heartbeat.
+ */
+export async function claimReminder(reminderId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const driver = resolveDriver();
+  const t = tables(driver);
+  const where = and(eq(t.reminders.id, reminderId), eq(t.reminders.isSent, 0));
+  if (driver === "mysql") {
+    const result = await db.update(t.reminders).set({ isSent: 1 }).where(where);
+    return Number((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0) > 0;
+  }
+  // better-sqlite3 dialect: `run()` executes synchronously and reports `changes`.
+  const info = db.update(t.reminders).set({ isSent: 1 }).where(where).run() as {
+    changes?: number;
+  };
+  return Number(info?.changes ?? 0) > 0;
+}
+
+/** Hand a claimed reminder back to the pending queue (delivery did not happen). */
+export async function releaseReminderClaim(reminderId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const t = tables(resolveDriver());
-  await db.update(t.reminders).set({ isSent: 1 }).where(eq(t.reminders.id, reminderId));
+  await db
+    .update(t.reminders)
+    .set({ isSent: 0 })
+    .where(and(eq(t.reminders.id, reminderId), eq(t.reminders.isSent, 1)));
 }
 
 /** Get reminders for a note */

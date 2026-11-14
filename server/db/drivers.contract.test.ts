@@ -368,9 +368,15 @@ function defineContract(name: string, setup: () => Promise<{ db: Storage; userId
       expect(mine).toBeDefined();
       expect(mine!.reminderTime).toBeInstanceOf(Date);
 
-      await db.markReminderAsSent(mine!.id);
+      // The claim is the idempotency gate: the FIRST caller wins, the second is
+      // told it lost, and a released claim becomes claimable again.
+      expect(await db.claimReminder(mine!.id)).toBe(true);
+      expect(await db.claimReminder(mine!.id)).toBe(false);
       const after = await db.getRemindersForNote(noteId);
       expect(after.find((r) => r.id === mine!.id)!.isSent).toBeTruthy();
+
+      await db.releaseReminderClaim(mine!.id);
+      expect(await db.claimReminder(mine!.id)).toBe(true);
 
       await db.deleteRemindersForNote(noteId);
       expect(await db.getRemindersForNote(noteId)).toHaveLength(0);
