@@ -1,9 +1,10 @@
 import {
+  claimReminder,
   createNotificationLog,
   getNoteById,
   getPendingReminders,
   getUserById,
-  markReminderAsSent,
+  releaseReminderClaim,
 } from "./db/index";
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
@@ -26,14 +27,22 @@ export async function processPendingReminders() {
     const reminders = await getPendingReminders(now);
 
     for (const reminder of reminders) {
+      // Claim BEFORE delivering. The heartbeat is a durable callback and runs can
+      // overlap, so a read-then-send pair delivers the same reminder twice; the
+      // conditional claim is what makes delivery idempotent.
+      if (!(await claimReminder(reminder.id))) continue;
+
       const note = await getNoteById(reminder.noteId);
-      if (!note) continue;
+      if (!note) {
+        await releaseReminderClaim(reminder.id);
+        continue;
+      }
 
       const delivered = await sendReminder(note, reminder);
       // Keep failed/skipped-only reminders pending so configuration problems are
       // visible and can be retried after an email provider is configured.
-      if (delivered) {
-        await markReminderAsSent(reminder.id);
+      if (!delivered) {
+        await releaseReminderClaim(reminder.id);
       }
     }
   } catch (error) {

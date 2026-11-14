@@ -1,5 +1,20 @@
 ## Unreleased
 
+- **A reminder is delivered exactly once, even when two heartbeat runs overlap.**
+  `processPendingReminders()` read the pending rows and only wrote `isSent` *after* a
+  successful send, so the durable callback had a read-then-write window: two overlapping
+  runs both selected the same reminder and both pushed it. Delivery is now gated by
+  `claimReminder()` — a single conditional `UPDATE … WHERE id = ? AND isSent = 0` that
+  reports whether this caller won — so the loser skips the row instead of sending it.
+  A claim that fails to deliver is handed back with `releaseReminderClaim()`, so a
+  missing email provider or a transient outage still leaves the reminder pending for the
+  next heartbeat, as before. `server/notifications.test.ts` (6 tests) proves the
+  duplicate — it fails on the old code with two deliveries — and the storage claim is
+  asserted on both drivers in `server/db/drivers.contract.test.ts`. This is item 31 of
+  [docs/ENHANCEMENTS.md](./docs/ENHANCEMENTS.md) — idempotent reminder processing — solved
+  at the row (one conditional claim) rather than with a unique key on the delivery log,
+  because the log must still be free to record a failed attempt and its retry.
+
 - **A damaged backup file imports the notes it can, and says what it could not.**
   The browser importer validated the file with a hand-written filter that was weaker than the
   server's zod schema, so one note with a title over 255 characters, an empty body, or a
