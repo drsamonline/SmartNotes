@@ -420,6 +420,17 @@
   } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
 })();
 </script>
+<style>
+/* ---- a11y: the rule each label needs, chosen against its measured surface -- */
+pre *{color:#ffffff!important}   /* the token spans carried the muted ink on a dark block */
+
+[data-theme="light"] pre{color:#ffffff!important}
+[data-theme="dark"] pre{color:#ffffff!important}
+[data-theme="light"] a.btn.btn-primary{color:#0b1020!important}   /* 3.19 -> 5.94:1 on rgb(217,119,6) */
+[data-theme="dark"] a.btn.btn-primary{color:#0b1020!important}   /* 2.08 -> 9.08:1 on rgb(240,164,58) */
+[data-theme="light"] pre{color:#ffffff!important}   /* 4.29 -> 16.34:1 on rgb(36,31,25) */
+[data-theme="dark"] pre{color:#ffffff!important}   /* 4.29 -> 16.34:1 on rgb(36,31,25) */
+</style>
 </head>
 <body>
 
