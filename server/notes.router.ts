@@ -9,9 +9,9 @@ import {
   getNotificationHistory,
   getUserNotes,
   updateNote,
-  createReminder,
   deleteRemindersForNote,
 } from "./db/index";
+import { syncNoteReminder } from "./reminders";
 import { analyzeNoteContent, combineDateAndTime } from "./ai";
 import { BACKUP_MAX_NOTES, backupNoteSchema } from "@shared/noteBackup";
 
@@ -55,21 +55,12 @@ export const notesRouter = router({
         // which is unsafe when two notes are created concurrently.
         const createdNote = await getNoteById(createdNoteId);
 
-        // Create reminder if date is set
-        if ((dueDate || scheduledDate) && createdNote) {
-          const reminderDate = dueDate || scheduledDate;
-          if (reminderDate) {
-            // Schedule reminder 1 hour before the event
-            const reminderTime = new Date(reminderDate.getTime() - 60 * 60 * 1000);
-            if (reminderTime > new Date()) {
-              await createReminder({
-                noteId: createdNote.id,
-                reminderTime,
-                notificationType: "both",
-                isSent: 0,
-              });
-            }
-          }
+        // The reminder rule lives in ./reminders so create, import, edit and
+        // complete cannot disagree about when a note is reminded.
+        if (createdNote) {
+          await syncNoteReminder(createdNote.id, dueDate || scheduledDate, {
+            isCompleted: createdNote.isCompleted,
+          });
         }
 
         return createdNote;
@@ -99,13 +90,9 @@ export const notesRouter = router({
           dueDate,
           scheduledDate,
         });
-        const eventDate = dueDate || scheduledDate;
-        if (eventDate) {
-          const reminderTime = new Date(eventDate.getTime() - 60 * 60 * 1000);
-          if (reminderTime > new Date()) {
-            await createReminder({ noteId: createdNoteId, reminderTime, notificationType: "both", isSent: 0 });
-          }
-        }
+        await syncNoteReminder(createdNoteId, dueDate || scheduledDate, {
+          isCompleted: note.isCompleted ? 1 : 0,
+        });
       }
       return { imported: input.notes.length };
     }),
@@ -172,8 +159,23 @@ export const notesRouter = router({
       if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
       if (input.scheduledDate !== undefined) updateData.scheduledDate = input.scheduledDate;
 
+      const dateChanged =
+        input.dueDate !== undefined || input.scheduledDate !== undefined;
+      const completionChanged =
+        input.isCompleted !== undefined && input.isCompleted !== note.isCompleted;
+
       await updateNote(input.id, updateData);
-      return getNoteById(input.id);
+      const updated = await getNoteById(input.id);
+
+      // Moving a deadline moves its reminder; completing one silences it and
+      // un-completing one re-arms it. Before this, `update` touched the note
+      // and left the reminder at the old time.
+      if (updated && (dateChanged || completionChanged)) {
+        await syncNoteReminder(updated.id, updated.dueDate || updated.scheduledDate, {
+          isCompleted: updated.isCompleted,
+        });
+      }
+      return updated;
     }),
 
   /**
@@ -233,7 +235,13 @@ export const notesRouter = router({
       }
 
       await updateNote(input.id, { isCompleted: input.isCompleted });
-      return getNoteById(input.id);
+      const updated = await getNoteById(input.id);
+      if (updated) {
+        await syncNoteReminder(updated.id, updated.dueDate || updated.scheduledDate, {
+          isCompleted: updated.isCompleted,
+        });
+      }
+      return updated;
     }),
 
   /**

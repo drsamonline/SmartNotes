@@ -38,7 +38,9 @@ dates/times ("tomorrow at 3pm") so nothing slips through the cracks.
   generation, and natural-language date/time extraction.
 - ⏰ **Reminder scheduling** — reminders fire 1 hour before a deadline or
   scheduled time via a durable heartbeat endpoint (`POST
-  /api/scheduled/process-reminders`).
+  /api/scheduled/process-reminders`). They follow the note: moving a date moves
+  its reminder, an event inside the last hour is reminded at once, completing a
+  note cancels its reminder, and reopening it re-arms it.
 - 🔔 **Multi-channel notifications** — push notifications (Manus owner
   notification API) and optional email delivery through a provider-neutral
   webhook. Every delivery attempt is logged as `sent`, `failed`, or `skipped`.

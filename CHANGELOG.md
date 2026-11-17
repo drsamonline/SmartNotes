@@ -1,5 +1,20 @@
 ## Unreleased
 
+- **A reminder now follows the note it belongs to.** The one-hour rule was written out
+  twice — in `create` and in `importBackup` — and missing from `update`, so the reminder
+  was fixed at the moment of creation: moving a deadline to tomorrow still fired the
+  reminder for the old time and never for the new one, and a note written less than an
+  hour before its deadline (or edited into that window) was given **no reminder at all**,
+  because the computed time was already past and the code simply skipped it. The rule now
+  lives once, in `server/reminders.ts`: `planReminder()` decides (no date → none, completed
+  → none, event already past → none, event inside the lead window → remind **now**), and
+  `syncNoteReminder()` makes the stored rows match it — idempotently, so re-saving a note
+  cannot re-arm a reminder that has already fired. `create`, `importBackup`, `update` and
+  `toggleComplete` all call it: moving a date moves the reminder, removing a date clears
+  it, completing a note silences it and un-completing re-arms it. `server/reminders.test.ts`
+  (11 tests) and `server/notes.reminderWiring.test.ts` (6 tests) — the second runs the real
+  tRPC router, and 4 of its 6 tests are red on the previous code.
+
 - **A damaged backup file imports the notes it can, and says what it could not.**
   The browser importer validated the file with a hand-written filter that was weaker than the
   server's zod schema, so one note with a title over 255 characters, an empty body, or a
