@@ -37,7 +37,14 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        # `--legacy-peer-deps` is required, and its absence is itself a finding: the
+        # lockfile (lockfileVersion 3) holds a peer conflict no strict install can
+        # resolve — `@builder.io/vite-plugin-jsx-loc@0.1.1` declares `vite: ^4 || ^5`
+        # while the project is on `vite: ^7.1.7`. The tree was only ever installed
+        # with legacy resolution, and nothing in the repo recorded that, so a plain
+        # `npm ci` fails ERESOLVE on a clean machine. That is not a CI quirk to work
+        # around silently: it is why this step is the first thing the workflow pins.
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
 
       - name: Run the test suite
         # A suite that runs zero tests is a green light that checked nothing, so
