@@ -1,5 +1,15 @@
 ## Unreleased
 
+- **The tests now run on every push, not just on one machine.** This repository had
+  58 passing tests and no CI at all — `.github/workflows/` held only `FUNDING.yml` — so
+  every one of them guarded a developer's laptop and nothing guarded the code. The suite
+  was already node-environment and mocked its own store, so the only real obstacle was
+  `better-sqlite3`, a native module the Forge cycle sandbox cannot build and a GitHub
+  runner can. `.github/workflows/test.yml` now runs `npm ci` and `npm test` on push to
+  `main`, on every pull request and on dispatch, and it **refuses to report success unless
+  vitest actually collected passing tests** — a suite that runs zero tests is a green
+  light that checked nothing.
+
 - **A reminder now follows the note it belongs to.** The one-hour rule was written out
   twice — in `create` and in `importBackup` — and missing from `update`, so the reminder
   was fixed at the moment of creation: moving a deadline to tomorrow still fired the

@@ -1,0 +1,56 @@
+name: test
+
+# The suite existed and nothing ran it. This repository shipped 58 passing tests
+# with no workflow to run them, so a push could break any of them and no one
+# would know: the tests guarded a developer's machine, not the code.
+#
+# `npm test` is `vitest run` (vitest.config.ts includes server/**/*.test.ts).
+# The suite is node-environment and mocks its own store, so it needs no service
+# and no secrets — only a checkout, Node, and the dependency tree. `better-sqlite3`
+# is a native module: this runner can build it, the Forge cycle sandbox cannot,
+# which is why this job lives here rather than in the cycle.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # was @v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # was @v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run the test suite
+        # A suite that runs zero tests is a green light that checked nothing, so
+        # refuse to report success unless vitest actually collected some. `set +e`
+        # is deliberate: the runner's shell is `bash -eo pipefail`, which would
+        # abort at the pipeline and skip the diagnosis below.
+        run: |
+          set +e
+          npm test 2>&1 | tee vitest.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if ! grep -qE "Tests +[0-9]+ passed" vitest.log; then
+            echo "::error::vitest collected no passing tests — this job proved nothing"
+            exit 1
+          fi
+          exit "$status"
