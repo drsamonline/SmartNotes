@@ -1,0 +1,71 @@
+name: test
+
+# The suite existed and nothing ran it. This repository shipped 58 passing tests
+# with no workflow to run them, so a push could break any of them and no one
+# would know: the tests guarded a developer's machine, not the code.
+#
+# `npm test` is `vitest run` (vitest.config.ts includes server/**/*.test.ts).
+# The suite is node-environment and mocks its own store, so it needs no service
+# and no secrets — only a checkout, Node, and the dependency tree. `better-sqlite3`
+# is a native module: this runner can build it, the Forge cycle sandbox cannot,
+# which is why this job lives here rather than in the cycle.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # was @v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # was @v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        # `--legacy-peer-deps` is required, and its absence is itself a finding: the
+        # lockfile (lockfileVersion 3) holds a peer conflict no strict install can
+        # resolve — `@builder.io/vite-plugin-jsx-loc@0.1.1` declares `vite: ^4 || ^5`
+        # while the project is on `vite: ^7.1.7`. The tree was only ever installed
+        # with legacy resolution, and nothing in the repo recorded that, so a plain
+        # `npm ci` fails ERESOLVE on a clean machine. That is not a CI quirk to work
+        # around silently: it is why this step is the first thing the workflow pins.
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
+
+      - name: Run the test suite
+        # A suite that runs zero tests is a green light that checked nothing, so
+        # refuse to report success unless vitest actually collected some. Two
+        # details, both learned the hard way on this workflow's first run:
+        #   * `NO_COLOR` and the `sed` below strip ANSI, because vitest colours the
+        #     summary and the escapes sit BETWEEN "Tests" and the count — a plain
+        #     grep for `Tests +[0-9]+ passed` misses a fully green run (it did).
+        #   * `set +e` is deliberate: the runner's shell is `bash -eo pipefail`,
+        #     which would abort at the pipeline and skip the diagnosis.
+        env:
+          NO_COLOR: "1"
+        run: |
+          set +e
+          npm test 2>&1 | tee vitest.log
+          status=${PIPESTATUS[0]}
+          set -e
+          sed -e 's/\x1b\[[0-9;]*m//g' vitest.log > vitest-clean.log
+          if ! grep -qE "Tests +[0-9]+ passed" vitest-clean.log; then
+            echo "::error::vitest collected no passing tests — this job proved nothing"
+            exit 1
+          fi
+          grep -E "Tests +[0-9]+ passed" vitest-clean.log
+          exit "$status"
