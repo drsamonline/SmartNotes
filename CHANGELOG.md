@@ -1,14 +1,27 @@
 ## Unreleased
 
 - **The tests now run on every push, not just on one machine.** This repository had
-  58 passing tests and no CI at all — `.github/workflows/` held only `FUNDING.yml` — so
-  every one of them guarded a developer's laptop and nothing guarded the code. The suite
-  was already node-environment and mocked its own store, so the only real obstacle was
-  `better-sqlite3`, a native module the Forge cycle sandbox cannot build and a GitHub
-  runner can. `.github/workflows/test.yml` now runs `npm ci` and `npm test` on push to
-  `main`, on every pull request and on dispatch, and it **refuses to report success unless
-  vitest actually collected passing tests** — a suite that runs zero tests is a green
-  light that checked nothing.
+  **79 passing tests across 10 files and no CI at all** — `.github/workflows/` held only
+  `FUNDING.yml` — so every one of them guarded a developer's laptop and nothing guarded
+  the code. The suite was already node-environment and mocked its own store, so the only
+  real obstacle was `better-sqlite3`, a native module the Forge cycle sandbox cannot
+  build and a GitHub runner can. `.github/workflows/test.yml` now runs the suite on push
+  to `main`, on every pull request and on dispatch, in about 36 seconds.
+
+  Two things the workflow itself found, both of which had been invisible:
+
+  1. **A clean machine could not install this repository at all.** `npm ci` fails
+     `ERESOLVE`: the lockfile (v3) holds a peer conflict no strict install can resolve —
+     `@builder.io/vite-plugin-jsx-loc@0.1.1` declares `vite: ^4 || ^5` while the project
+     is on `vite: ^7.1.7`. The tree was only ever installed with legacy resolution and
+     nothing recorded that, so `npm ci --legacy-peer-deps` is now pinned with the reason
+     written next to it.
+  2. **A zero-test suite cannot report success.** The job greps vitest's own summary and
+     fails with an explicit error if no test passed, so a broken include glob is a red
+     build rather than a green light that checked nothing. That guard's first version was
+     itself wrong — vitest colours the summary and the escapes sit between `Tests` and the
+     count, so it failed a fully green run — and it now strips ANSI before matching,
+     verified against the real escape sequence.
 
 - **A reminder now follows the note it belongs to.** The one-hour rule was written out
   twice — in `create` and in `importBackup` — and missing from `update`, so the reminder
