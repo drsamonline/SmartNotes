@@ -17,7 +17,7 @@ const good = {
   isCompleted: 0,
   dueDate: "2026-10-10T10:00:00.000Z",
   scheduledDate: null,
-};
+} satisfies BackupNote;
 
 /** The importer as it was before this change: a filter/map on the client. */
 function oldImporter(payload: unknown): Record<string, unknown>[] {

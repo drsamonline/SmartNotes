@@ -1,5 +1,37 @@
 ## Unreleased
 
+- **The type check runs now, and it covers the tests too.** `npm run check`
+  (`tsc --noEmit`) was in `package.json` from the beginning and no workflow ever ran
+  it, so a type error shipped for as long as no test happened to execute the line it
+  was on. `.github/workflows/test.yml` gained a `typecheck` job alongside the suite.
+
+  Turning the check on was not a one-line change, and what it found is the reason it
+  was worth doing:
+
+  1. **Five errors on `main`, invisible until now.** Four were `TS2802` — spreading
+     `String.prototype.matchAll(...)` — because `tsconfig.json` never set `target`, so
+     `tsc` compiled as ES5 while the app actually runs on Node 22. The config now says
+     `"target": "ES2022"`, which is what was already true at runtime. The fifth was a
+     real one: `server/noteBackup.test.ts` declared its fixture's `category` and
+     `priority` as `string`, so the test would have accepted a category the schema
+     rejects. It is now `satisfies BackupNote`.
+  2. **The 10 test files were excluded from the type check.** `tsconfig.json` carried
+     `"**/*.test.ts"` in `exclude`, so the files most likely to drift from the code
+     they test were the one part of the tree a type check would never see. Removing it
+     is what surfaced the fifth error above. Proven both ways: a deliberate
+     `const brokenTest: string = 42` in a test file is **0 errors** under the old
+     config and **1 error** under the new one.
+  3. **A check that inspects nothing still exits 0.** The job asserts the file count
+     (`--listFiles`, 1892 files today) before it trusts the exit code, the same rule the
+     test job applies to a zero-test suite. `--ignore-scripts` is used in this job
+     because a type check reads `.d.ts` files and never loads a native binding, so
+     `better-sqlite3` need not be compiled to prove the types.
+
+  **Proof:** `npm run check` green over 1892 files; a type error injected in app code
+  and another in a test file each turn the job red (step exit 2, error printed, count
+  asserted); the suite is unchanged at 70 passed / 9 skipped locally, and the DB
+  contract file needs the native build only the runner has.
+
 - **The tests now run on every push, not just on one machine.** This repository had
   **79 passing tests across 10 files and no CI at all** — `.github/workflows/` held only
   `FUNDING.yml` — so every one of them guarded a developer's laptop and nothing guarded
