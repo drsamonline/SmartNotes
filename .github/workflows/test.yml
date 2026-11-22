@@ -9,6 +9,16 @@ name: test
 # and no secrets — only a checkout, Node, and the dependency tree. `better-sqlite3`
 # is a native module: this runner can build it, the Forge cycle sandbox cannot,
 # which is why this job lives here rather than in the cycle.
+#
+# The second job is the type check. `npm run check` (`tsc --noEmit`) existed in
+# package.json from the start and NOTHING ran it, so a type error shipped as long
+# as no test happened to touch it. Turning it on over the whole tree found five
+# errors on `main` — four from a tsconfig with no `target` (so tsc compiled as
+# ES5 while the app runs on Node 22) and one where a test fixture declared
+# `category: string` for a field the schema types as a union. It also found that
+# the tsconfig excluded `**/*.test.ts`, so the 10 test files — the files most
+# likely to drift from the code they test — were the one part of the tree a type
+# check would never have seen. Both are fixed, and this job is the guard.
 
 on:
   workflow_dispatch: {}
@@ -68,4 +78,41 @@ jobs:
             exit 1
           fi
           grep -E "Tests +[0-9]+ passed" vitest-clean.log
+          exit "$status"
+
+  typecheck:
+    name: type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # was @v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # was @v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        # `--ignore-scripts` is correct here and is the point of a separate job:
+        # a type check reads `.d.ts` files and never loads a native binding, so
+        # `better-sqlite3` does not have to be compiled to prove the types. The
+        # same peer conflict as the test job applies, hence `--legacy-peer-deps`.
+        run: npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+
+      - name: Type check the whole tree, tests included
+        # `tsc` exits 0 when it checked nothing — a broken `include` glob is a
+        # green light that proved nothing, the same trap the test job guards
+        # against. So the file count is asserted before the exit code is trusted.
+        run: |
+          set +e
+          npx tsc --noEmit --listFiles > tsc.log 2>&1
+          status=$?
+          set -e
+          grep -E 'error TS' tsc.log || true
+          checked=$(grep -c "^${GITHUB_WORKSPACE}/" tsc.log || true)
+          echo "files type-checked: $checked"
+          if [ "$checked" -lt 100 ]; then
+            echo "::error::tsc checked $checked files — the check proved nothing"
+            exit 1
+          fi
           exit "$status"
