@@ -19,6 +19,12 @@ name: test
 # the tsconfig excluded `**/*.test.ts`, so the 10 test files — the files most
 # likely to drift from the code they test — were the one part of the tree a type
 # check would never have seen. Both are fixed, and this job is the guard.
+#
+# The third job is lint. `npm run lint` (`eslint .`) existed in package.json and
+# nothing ran it either, so the same trap was open one rung down: 140 files lint
+# clean today and any push could break a rule in silence. It runs with
+# `--max-warnings=0`, because two of the configured rules are warnings and the
+# unused-variable one is the rule that catches dead code.
 
 on:
   workflow_dispatch: {}
@@ -115,4 +121,69 @@ jobs:
             echo "::error::tsc checked $checked files — the check proved nothing"
             exit 1
           fi
+          exit "$status"
+
+  # The third gate, and the one rung down from the type check. `npm run lint`
+  # (`eslint .`) existed in package.json and, like `npm run check` before it,
+  # nothing ran it: 140 files are linted clean today, so any push is free to
+  # break a rule and no one would hear about it.
+  #
+  # Two details are the whole job:
+  #   * `--max-warnings=0`. Two of the rules the config sets are WARNINGS, and
+  #     `@typescript-eslint/no-unused-vars` is the one that matters — dead code
+  #     is exactly what a warning-level rule catches. Measured on this tree: a
+  #     single unused `const` added to a page exits 0 under plain `eslint .` and
+  #     1 under `--max-warnings=0`. Without the flag the gate has a hole in it.
+  #   * the file count is asserted. ESLint exits 0 when it lints nothing, so an
+  #     `ignores` entry or a `files` glob that stopped matching would read as a
+  #     green run that inspected nothing — the same trap the test job (no tests
+  #     collected) and the type check (no files listed) each guard against.
+  # `--ignore-scripts` again: eslint loads no native binding, so better-sqlite3
+  # does not have to be compiled to lint the tree.
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # was @v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # was @v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+
+      - name: Lint the whole tree, tests included
+        env:
+          NO_COLOR: "1"
+        run: |
+          set +e
+          npx eslint . --max-warnings=0 --format json > lint.json 2> lint.err
+          status=$?
+          set -e
+          cat lint.err
+          node -e '
+            const fs = require("fs");
+            let results = [];
+            try { results = JSON.parse(fs.readFileSync("lint.json", "utf8")); } catch (e) {
+              console.log("::error::eslint wrote no parsable report — the gate proved nothing");
+              process.exit(1);
+            }
+            let problems = 0;
+            for (const file of results) {
+              for (const m of file.messages) {
+                problems++;
+                const level = m.severity === 2 ? "error" : "warning";
+                console.log(`${file.filePath}:${m.line}:${m.column}  ${level}  ${m.message}  (${m.ruleId})`);
+              }
+            }
+            console.log(`files linted: ${results.length}, problems: ${problems}`);
+            if (results.length < 100) {
+              console.log(`::error::eslint inspected ${results.length} files — the gate proved nothing`);
+              process.exit(1);
+            }
+            process.exit(problems > 0 ? 1 : 0);
+          '
           exit "$status"
