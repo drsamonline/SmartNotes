@@ -46,6 +46,19 @@ jobs:
         # around silently: it is why this step is the first thing the workflow pins.
         run: npm ci --legacy-peer-deps --no-audit --no-fund
 
+      - name: Check the format configuration
+        # `npm run format` is `prettier --write .` and it WRITES. Nothing recorded
+        # what it was allowed to write, so a plain run would have rewritten
+        # pnpm-lock.yaml and every drizzle/meta snapshot (measured 2026-11-27).
+        # This asserts the ignore list with prettier's own resolver rather than by
+        # grepping .prettierignore, so a pattern prettier does not honour fails here
+        # instead of failing to protect a file.
+        #
+        # The tree itself is not yet formatted to the pinned config (138 files on
+        # 2026-11-27), so this gates the CONFIGURATION, not the tree. Turning on
+        # `format:check` as a gate is a separate, reviewable reformat.
+        run: npm run format:config
+
       - name: Run the test suite
         # A suite that runs zero tests is a green light that checked nothing, so
         # refuse to report success unless vitest actually collected some. Two

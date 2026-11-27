@@ -1,0 +1,38 @@
+# What `npm run format` may never rewrite.
+#
+# `format` is `prettier --write .` — it WRITES. Until this file existed nothing
+# recorded which paths that was allowed to touch, and a plain run would have
+# rewritten pnpm-lock.yaml and every drizzle/meta snapshot (measured 2026-11-27).
+# A formatter is safe on source and dangerous on anything a tool compares
+# byte-for-byte, so the generated and authoritative files are named here.
+
+# Dependency and build output
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Lockfiles: a formatter must never touch dependency resolution.
+package-lock.json
+pnpm-lock.yaml
+
+# Drizzle's migration journal and snapshots. drizzle-kit compares these to decide
+# what a migration already contains; they are machine-written and must stay as
+# drizzle-kit wrote them.
+drizzle/meta/
+
+# Applied as a dependency patch by pnpm. Its bytes must match the published
+# tarball or the patch stops applying.
+patches/
+
+# Written by the host runtime, not by hand.
+client/public/__manus__/
+
+# CI definitions. Prettier's YAML printer reflows `run:` scalars, and a reflowed
+# shell script is a different shell script.
+.github/workflows/
+
+# Per-file provenance, written by tools/manifest.py. Reformatting it would drift
+# every recorded blob sha.
+MANIFEST.json
